@@ -649,10 +649,12 @@ let pendingEnd = { x: 0, y: 0 }
 function enterDrawMode(mode: DrawMode): void {
   drawMode.value = drawMode.value == mode ? 'none' : mode
   if (mode == 'fog' && drawMode.value == 'fog') mm.fogVisible = true
-  if (drawMode.value != 'none') currentPolygon.value = []
+  currentPolygon.value = []
   drawOrigin.value = null
-  draw()
-  drawOrigin.value = null
+  drawPreviewPoint.value = null
+  drawPending.value = 'none'
+  pendingOrigin = { x: 0, y: 0 }
+  pendingEnd = { x: 0, y: 0 }
   draw()
 }
 
@@ -1448,7 +1450,10 @@ function draw(): void {
 function finalizeSector(): void {
   const p1 = pendingOrigin
   const p2 = pendingEnd
-  if (Math.hypot(p2.x - p1.x, p2.y - p1.y) == 0) return
+  if (Math.hypot(p2.x - p1.x, p2.y - p1.y) == 0) {
+    cancelPendingDrawing()
+    return
+  }
   const angleDeg = drawPreviewPoint.value ? drawPreviewPoint.value.x : 45
   mm.drawings.push(
     maybeAttachFieldToNewDrawing({
@@ -1467,17 +1472,26 @@ function finalizeSector(): void {
 }
 
 function finalizeLine(): void {
-  if (!drawOrigin.value || !drawPreviewPoint.value) return
+  if (!drawOrigin.value || !drawPreviewPoint.value) {
+    cancelPendingDrawing()
+    return
+  }
   const p1 = pendingOrigin
   const p2 = pendingEnd
   const dx = p2.x - p1.x
   const dy = p2.y - p1.y
   const len = Math.hypot(dx, dy)
-  if (len == 0) return
+  if (len == 0) {
+    cancelPendingDrawing()
+    return
+  }
   const nx = -dy / len
   const ny = dx / len
   const hwGrid = drawPreviewPoint.value.x / 2
-  if (hwGrid == 0) return
+  if (hwGrid == 0) {
+    cancelPendingDrawing()
+    return
+  }
   const pts = [
     { x: p1.x + nx * hwGrid, y: p1.y + ny * hwGrid },
     { x: p1.x - nx * hwGrid, y: p1.y - ny * hwGrid },
@@ -1497,6 +1511,16 @@ function finalizeLine(): void {
   drawPending.value = 'none'
   drawOrigin.value = null
   drawPreviewPoint.value = null
+  draw()
+}
+
+function cancelPendingDrawing(): void {
+  dragMode = null
+  drawPending.value = 'none'
+  drawOrigin.value = null
+  drawPreviewPoint.value = null
+  pendingOrigin = { x: 0, y: 0 }
+  pendingEnd = { x: 0, y: 0 }
   draw()
 }
 
@@ -1841,13 +1865,12 @@ function canvasContextMenu(e: MouseEvent): void {
 }
 
 function cancelCanvasDragForLongPress(): void {
-  if (dragMode == 'drawShape') {
-    drawOrigin.value = null
-    drawPreviewPoint.value = null
-  }
+  const hadDrawingDraft = dragMode == 'drawShape' || drawPending.value != 'none'
+  if (hadDrawingDraft) cancelPendingDrawing()
   dragMode = null
   dragMoveCost = false
   drawingMoveBackup = null
+  if (!hadDrawingDraft) draw()
 }
 
 function scheduleCanvasLongPress(e: PointerEvent): void {
@@ -1952,7 +1975,12 @@ function canvasPointerUp(e: PointerEvent): void {
 function canvasPointerCancel(e: PointerEvent): void {
   if (canvasLongPressPointerId == e.pointerId) clearCanvasLongPress()
   activeCanvasPointers.delete(e.pointerId)
-  if (dragMode == 'pinch' && activeCanvasPointers.size < 2) dragMode = null
+  if (dragMode == 'drawShape' || drawPending.value != 'none') {
+    cancelPendingDrawing()
+  } else if (dragMode == 'pinch' && activeCanvasPointers.size < 2) {
+    dragMode = null
+    draw()
+  }
   if (canvasRef.value?.hasPointerCapture(e.pointerId)) {
     canvasRef.value.releasePointerCapture(e.pointerId)
   }
@@ -1986,10 +2014,7 @@ function canvasMouseDown(e: MouseEvent): void {
 
   // 右键取消绘制拖动
   if (e.button == 2 && dragMode == 'drawShape') {
-    drawOrigin.value = null
-    drawPreviewPoint.value = null
-    dragMode = null
-    draw()
+    cancelPendingDrawing()
     return
   }
   // 中键始终平移地图
@@ -2011,9 +2036,7 @@ function canvasMouseDown(e: MouseEvent): void {
     drawMode.value != 'sector'
   ) {
     if (e.button == 2) {
-      drawOrigin.value = null
-      drawPreviewPoint.value = null
-      draw()
+      cancelPendingDrawing()
       return
     }
     const pt = gridSnap(wx, wy, ox, oy, cs)
@@ -2070,10 +2093,7 @@ function canvasMouseDown(e: MouseEvent): void {
   if (drawMode.value == 'line' || drawMode.value == 'sector') {
     if (drawPending.value != 'none') {
       if (e.button == 2) {
-        drawPending.value = 'none'
-        drawOrigin.value = null
-        drawPreviewPoint.value = null
-        draw()
+        cancelPendingDrawing()
         return
       }
       if (drawMode.value == 'line') finalizeLine()
@@ -2081,9 +2101,7 @@ function canvasMouseDown(e: MouseEvent): void {
       return
     }
     if (e.button == 2) {
-      drawOrigin.value = null
-      drawPreviewPoint.value = null
-      draw()
+      cancelPendingDrawing()
       return
     }
     const pt = gridSnap(wx, wy, ox, oy, cs)
@@ -2218,7 +2236,7 @@ function canvasMouseMove(e: MouseEvent): void {
     const dy = p2.y - p1.y
     const len = Math.hypot(dx, dy)
     if (len == 0) {
-      draw()
+      cancelPendingDrawing()
       return
     }
     const nx = -dy / len
@@ -2245,6 +2263,10 @@ function canvasMouseMove(e: MouseEvent): void {
     const cs = mm.cellSize
     const p1 = pendingOrigin
     const p2 = pendingEnd
+    if (Math.hypot(p2.x - p1.x, p2.y - p1.y) == 0) {
+      cancelPendingDrawing()
+      return
+    }
     const wx1 = ox + p1.x * cs
     const wy1 = oy + p1.y * cs
     const wx2 = ox + p2.x * cs
@@ -2373,11 +2395,9 @@ function canvasMouseUp(): void {
     const dm = drawMode.value as string
     const p1 = drawOrigin.value
     const p2 = drawPreviewPoint.value
-    if (dm != 'line' && dm != 'sector' && Math.hypot(p2.x - p1.x, p2.y - p1.y) == 0) {
+    if (Math.hypot(p2.x - p1.x, p2.y - p1.y) == 0) {
       dragMode = null
-      drawOrigin.value = null
-      drawPreviewPoint.value = null
-      draw()
+      cancelPendingDrawing()
       return
     }
     if (dm == 'line') {
