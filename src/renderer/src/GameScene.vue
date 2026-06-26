@@ -70,6 +70,7 @@ import {
   type DrawMode
 } from './gameScene/constants'
 import {
+  clampNumber,
   drawShapeHighlight,
   hitDrawing,
   pointInPolygon,
@@ -272,18 +273,29 @@ function openPanel(
     return
   }
   const preset = panelSizePresets[component] ?? defaultPanelSizePreset
+  const hostRect = containerRef.value?.getBoundingClientRect()
+  const hostWidth = hostRect?.width ?? window.innerWidth
+  const hostHeight = hostRect?.height ?? window.innerHeight
+  const maxWidth = Math.max(220, Math.floor(hostWidth - 24))
+  const maxHeight = Math.max(180, Math.floor(hostHeight - 48))
+  const minWidth = Math.min(preset.minWidth, maxWidth)
+  const minHeight = Math.min(preset.minHeight, maxHeight)
+  const width = clampNumber(preset.width, minWidth, maxWidth)
+  const height = clampNumber(preset.height, minHeight, maxHeight)
+  const x = clampNumber(200, 0, Math.max(0, hostWidth - width - 12))
+  const y = clampNumber(120, 28, Math.max(28, hostHeight - height - 12))
   api.addPanel({
     id,
     component,
     title,
     params: params ?? {},
-    minimumWidth: preset.minWidth,
-    minimumHeight: preset.minHeight,
+    minimumWidth: minWidth,
+    minimumHeight: minHeight,
     floating: {
-      x: 200,
-      y: 120,
-      width: preset.width,
-      height: preset.height
+      x,
+      y,
+      width,
+      height
     }
   })
   scheduleKeepFloatingPanelsReachable()
@@ -414,6 +426,7 @@ const menuGroups = computed(() => {
       items: [
         { label: '存档到文件', action: 'save-dialog' },
         { label: '从文件读取', action: 'load-dialog' },
+        { label: '加载预设存档', action: 'load-preset-save' },
         { separator: true, label: '' },
         {
           label: '快速存档',
@@ -477,6 +490,34 @@ async function saveQuickSlot(slot: number): Promise<void> {
   if (!window.api || !hasContent()) return
   await window.api.quickSave(ESSerializerSerialize(), slot)
   await refreshQuickSaveSlots()
+}
+
+async function autoSaveCurrentState(): Promise<boolean> {
+  if (!window.api) return false
+  if (!hasContent()) return true
+  try {
+    const result = await window.api.quickSave(ESSerializerSerialize())
+    await refreshQuickSaveSlots()
+    if (!result.success) {
+      alert(result.message ?? '自动保存失败，未加载预设存档。')
+      return false
+    }
+    return true
+  } catch (error) {
+    alert(`自动保存失败，未加载预设存档：${String(error)}`)
+    return false
+  }
+}
+
+async function loadPresetSave(): Promise<void> {
+  if (!window.api?.loadPresetSave) return
+  if (!(await autoSaveCurrentState())) return
+  const result = await window.api.loadPresetSave()
+  if (result.success && result.data) {
+    loadFromJson(result.data)
+    return
+  }
+  alert(result.message ?? '预设存档加载失败。')
 }
 
 async function loadQuickSlot(slot: number): Promise<void> {
@@ -549,6 +590,10 @@ function handleMenuSelect(action: string): void {
     loadFromFile()
     return
   }
+  if (action == 'load-preset-save') {
+    loadPresetSave()
+    return
+  }
   if (action == 'panel-characters') {
     openPanel('CharacterListPanel', 'panel-chars', '角色列表', {})
   } else if (action == 'panel-weather') {
@@ -595,6 +640,7 @@ const drawWidth = ref(1)
 const drawAngle = ref(53)
 const gridSetupMode = ref(false)
 const snapEnabled = ref(true)
+const touchMoveCostMode = ref(false)
 const drawPreviewPoint = ref<{ x: number; y: number } | null>(null)
 const drawPending = ref<'none' | 'lineWidth' | 'sectorAngle'>('none')
 let pendingOrigin = { x: 0, y: 0 }
@@ -1489,6 +1535,7 @@ let dragMode:
   | 'origin'
   | 'oneMeter'
   | 'drawShape'
+  | 'pinch'
   | null = null
 let dragCode: string = ''
 let dragStartX = 0
@@ -1510,9 +1557,57 @@ let dragOriginY = 0
 let canvasMousePos = { x: 0, y: 0 }
 let drawingMoveBackup: { x: number; y: number }[] | null = null
 let ctrlPressed = false
+const activeCanvasPointers = new Map<number, { clientX: number; clientY: number }>()
+let canvasLongPressTimer: number | null = null
+let canvasLongPressPointerId: number | null = null
+let canvasLongPressStart = { x: 0, y: 0 }
+let canvasLongPressHandled = false
+let pinchStartDistance = 1
+let pinchStartScale = 1
+let pinchStartWorld = { x: 0, y: 0 }
+
+const canvasLongPressDelayMs = 560
+const canvasLongPressMoveTolerance = 12
 
 function snapPrecision(val: number): number {
   return ctrlPressed ? Math.round(val * 100) / 100 : Math.round(val * 2) / 2
+}
+
+function isNonMousePointer(e: MouseEvent): boolean {
+  return 'pointerType' in e && (e as PointerEvent).pointerType != 'mouse'
+}
+
+function clearCanvasLongPress(): void {
+  if (canvasLongPressTimer) {
+    window.clearTimeout(canvasLongPressTimer)
+    canvasLongPressTimer = null
+  }
+  canvasLongPressPointerId = null
+}
+
+function canvasPointerDistance(
+  a: { clientX: number; clientY: number },
+  b: { clientX: number; clientY: number }
+): number {
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+}
+
+function firstTwoCanvasPointers():
+  | [{ clientX: number; clientY: number }, { clientX: number; clientY: number }]
+  | null {
+  const pointers = Array.from(activeCanvasPointers.values())
+  if (pointers.length < 2) return null
+  return [pointers[0], pointers[1]]
+}
+
+function midpointClient(
+  a: { clientX: number; clientY: number },
+  b: { clientX: number; clientY: number }
+): { clientX: number; clientY: number } {
+  return {
+    clientX: (a.clientX + b.clientX) / 2,
+    clientY: (a.clientY + b.clientY) / 2
+  }
 }
 
 function gridSnap(
@@ -1628,7 +1723,10 @@ function triggerAutoAttack(
   openPanel('MultiTargetPanel', 'panel-multi', '施法', {})
 }
 
-function canvasEventPoint(e: MouseEvent): {
+function canvasPointFromClient(
+  clientX: number,
+  clientY: number
+): {
   mx: number
   my: number
   wx: number
@@ -1642,8 +1740,8 @@ function canvasEventPoint(e: MouseEvent): {
   const rect = canvas.getBoundingClientRect()
   const scaleX = canvas.width / rect.width
   const scaleY = canvas.height / rect.height
-  const mx = (e.clientX - rect.left) * scaleX
-  const my = (e.clientY - rect.top) * scaleY
+  const mx = (clientX - rect.left) * scaleX
+  const my = (clientY - rect.top) * scaleY
   return {
     mx,
     my,
@@ -1655,10 +1753,11 @@ function canvasEventPoint(e: MouseEvent): {
   }
 }
 
-function canvasContextMenu(e: MouseEvent): void {
-  e.preventDefault()
-  e.stopPropagation()
+function canvasEventPoint(e: MouseEvent): ReturnType<typeof canvasPointFromClient> {
+  return canvasPointFromClient(e.clientX, e.clientY)
+}
 
+function openCanvasContextMenuAt(clientX: number, clientY: number): void {
   // 右键取消绘图/迷雾移动
   if (drawingMoveBackup) {
     if (dragMode == 'drawing') {
@@ -1674,7 +1773,7 @@ function canvasContextMenu(e: MouseEvent): void {
   }
   if (dragMode) return
 
-  const point = canvasEventPoint(e)
+  const point = canvasPointFromClient(clientX, clientY)
   if (!point) return
   const { wx, wy, ox, oy, cs } = point
 
@@ -1691,8 +1790,8 @@ function canvasContextMenu(e: MouseEvent): void {
       ctxMenuTarget.value = 'token'
       ctxMenuDrawingIdx.value = i
       ctxMenuHighlight.value = { type: 'token', idx: i, code: t.code }
-      ctxMenuX.value = e.clientX
-      ctxMenuY.value = e.clientY
+      ctxMenuX.value = clientX
+      ctxMenuY.value = clientY
       ctxMenuVisible.value = true
       return
     }
@@ -1714,8 +1813,8 @@ function canvasContextMenu(e: MouseEvent): void {
       ctxMenuTarget.value = 'drawing'
       ctxMenuDrawingIdx.value = i
       ctxMenuHighlight.value = { type: 'drawing', idx: i }
-      ctxMenuX.value = e.clientX
-      ctxMenuY.value = e.clientY
+      ctxMenuX.value = clientX
+      ctxMenuY.value = clientY
       ctxMenuVisible.value = true
       return
     }
@@ -1725,14 +1824,142 @@ function canvasContextMenu(e: MouseEvent): void {
       ctxMenuTarget.value = 'fog'
       ctxMenuDrawingIdx.value = i
       ctxMenuHighlight.value = { type: 'fog', idx: i }
-      ctxMenuX.value = e.clientX
-      ctxMenuY.value = e.clientY
+      ctxMenuX.value = clientX
+      ctxMenuY.value = clientY
       ctxMenuVisible.value = true
       return
     }
   }
 
   closeContextMenu()
+}
+
+function canvasContextMenu(e: MouseEvent): void {
+  e.preventDefault()
+  e.stopPropagation()
+  openCanvasContextMenuAt(e.clientX, e.clientY)
+}
+
+function cancelCanvasDragForLongPress(): void {
+  if (dragMode == 'drawShape') {
+    drawOrigin.value = null
+    drawPreviewPoint.value = null
+  }
+  dragMode = null
+  dragMoveCost = false
+  drawingMoveBackup = null
+}
+
+function scheduleCanvasLongPress(e: PointerEvent): void {
+  if (e.pointerType == 'mouse') return
+  clearCanvasLongPress()
+  canvasLongPressHandled = false
+  canvasLongPressPointerId = e.pointerId
+  canvasLongPressStart = { x: e.clientX, y: e.clientY }
+  canvasLongPressTimer = window.setTimeout(() => {
+    if (canvasLongPressPointerId != e.pointerId) return
+    canvasLongPressHandled = true
+    cancelCanvasDragForLongPress()
+    openCanvasContextMenuAt(e.clientX, e.clientY)
+    draw()
+  }, canvasLongPressDelayMs)
+}
+
+function updateCanvasLongPress(e: PointerEvent): void {
+  if (canvasLongPressPointerId != e.pointerId) return
+  const dist = Math.hypot(e.clientX - canvasLongPressStart.x, e.clientY - canvasLongPressStart.y)
+  if (dist > canvasLongPressMoveTolerance) clearCanvasLongPress()
+}
+
+function beginCanvasPinch(): void {
+  const pair = firstTwoCanvasPointers()
+  if (!pair) return
+  const [a, b] = pair
+  const mid = midpointClient(a, b)
+  const point = canvasPointFromClient(mid.clientX, mid.clientY)
+  if (!point) return
+  pinchStartDistance = Math.max(1, canvasPointerDistance(a, b))
+  pinchStartScale = mm.viewScale
+  pinchStartWorld = {
+    x: (point.mx - mm.viewX) / mm.viewScale,
+    y: (point.my - mm.viewY) / mm.viewScale
+  }
+  dragMode = 'pinch'
+}
+
+function updateCanvasPinch(): void {
+  const pair = firstTwoCanvasPointers()
+  if (!pair) return
+  const [a, b] = pair
+  const mid = midpointClient(a, b)
+  const point = canvasPointFromClient(mid.clientX, mid.clientY)
+  if (!point) return
+  const distance = Math.max(1, canvasPointerDistance(a, b))
+  mm.viewScale = clampNumber(pinchStartScale * (distance / pinchStartDistance), 0.1, 10)
+  mm.viewX = point.mx - pinchStartWorld.x * mm.viewScale
+  mm.viewY = point.my - pinchStartWorld.y * mm.viewScale
+  draw()
+}
+
+function canvasPointerDown(e: PointerEvent): void {
+  e.preventDefault()
+  canvasRef.value?.setPointerCapture(e.pointerId)
+  activeCanvasPointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY })
+
+  if (e.pointerType != 'mouse' && activeCanvasPointers.size >= 2) {
+    clearCanvasLongPress()
+    beginCanvasPinch()
+    return
+  }
+
+  scheduleCanvasLongPress(e)
+  canvasMouseDown(e)
+}
+
+function canvasPointerMove(e: PointerEvent): void {
+  if (activeCanvasPointers.has(e.pointerId)) {
+    activeCanvasPointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY })
+  }
+  updateCanvasLongPress(e)
+
+  if (dragMode == 'pinch') {
+    updateCanvasPinch()
+    return
+  }
+  if (canvasLongPressHandled) return
+  canvasMouseMove(e)
+}
+
+function canvasPointerUp(e: PointerEvent): void {
+  if (canvasLongPressPointerId == e.pointerId) clearCanvasLongPress()
+  activeCanvasPointers.delete(e.pointerId)
+  if (canvasRef.value?.hasPointerCapture(e.pointerId)) {
+    canvasRef.value.releasePointerCapture(e.pointerId)
+  }
+
+  if (dragMode == 'pinch') {
+    dragMode = activeCanvasPointers.size >= 2 ? 'pinch' : null
+    if (dragMode == 'pinch') beginCanvasPinch()
+    return
+  }
+  if (canvasLongPressHandled) {
+    canvasLongPressHandled = false
+    return
+  }
+  canvasMouseUp()
+}
+
+function canvasPointerCancel(e: PointerEvent): void {
+  if (canvasLongPressPointerId == e.pointerId) clearCanvasLongPress()
+  activeCanvasPointers.delete(e.pointerId)
+  if (dragMode == 'pinch' && activeCanvasPointers.size < 2) dragMode = null
+  if (canvasRef.value?.hasPointerCapture(e.pointerId)) {
+    canvasRef.value.releasePointerCapture(e.pointerId)
+  }
+}
+
+function canvasPointerLeave(e: PointerEvent): void {
+  if (e.pointerType == 'mouse') canvasPointerUp(e)
 }
 
 function canvasMouseDown(e: MouseEvent): void {
@@ -1918,7 +2145,7 @@ function canvasMouseDown(e: MouseEvent): void {
       dragTokenDropY = (wy - oy) / cs
       dragTokenDropCellX = gridCellCenter(dragTokenDropX)
       dragTokenDropCellY = gridCellCenter(dragTokenDropY)
-      dragMoveCost = e.ctrlKey || e.metaKey
+      dragMoveCost = e.ctrlKey || e.metaKey || (isNonMousePointer(e) && touchMoveCostMode.value)
       if (dragMoveCost) {
         const c = thisCreatures.value.find((x) => x.code() == t.code)
         dragMoveStartPoints = c ? c.currentMov : 0
@@ -2033,6 +2260,7 @@ function canvasMouseMove(e: MouseEvent): void {
     draw()
     return
   }
+  if (dragMode == 'pinch') return
   if (!dragMode) return
   const canvas = canvasRef.value
   if (!canvas) return
@@ -2106,6 +2334,11 @@ function canvasMouseMove(e: MouseEvent): void {
 }
 
 function canvasMouseUp(): void {
+  if (dragMode == 'pinch') {
+    dragMode = null
+    draw()
+    return
+  }
   if (dragMode == 'token' && !dragMoveCost && dragCode) {
     const attackerToken = mm.tokens.find((token) => token.code == dragCode)
     const wasDragged =
@@ -2734,21 +2967,24 @@ async function buildSaveJson(): Promise<void> {
       :draw-mode="drawMode"
       :draw-color="drawColor"
       :snap-enabled="snapEnabled"
+      :move-cost-mode="touchMoveCostMode"
       @draw-color-change="drawColor = $event"
       @snap-enabled-change="snapEnabled = $event"
+      @move-cost-mode-change="touchMoveCostMode = $event"
       @enter-draw-mode="enterDrawMode"
       @toggle-fog-visible="toggleFogVisible"
       @set-hp-display-level="setHPDisplayLevel"
     />
     <canvas
       ref="canvasRef"
+      class="scene-canvas"
       :width="canvasWidth"
       :height="canvasHeight"
-      style="display: block"
-      @mousedown="canvasMouseDown"
-      @mousemove="canvasMouseMove"
-      @mouseup="canvasMouseUp"
-      @mouseleave="canvasMouseUp"
+      @pointerdown="canvasPointerDown"
+      @pointermove="canvasPointerMove"
+      @pointerup="canvasPointerUp"
+      @pointercancel="canvasPointerCancel"
+      @pointerleave="canvasPointerLeave"
       @wheel.prevent="canvasWheel"
       @contextmenu.prevent="canvasContextMenu"
     />
@@ -2775,9 +3011,17 @@ async function buildSaveJson(): Promise<void> {
 .desktop {
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: #ffffff;
   position: relative;
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+.scene-canvas {
+  display: block;
+  touch-action: none;
 }
 
 .context-menu-backdrop {

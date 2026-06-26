@@ -22,8 +22,8 @@ function downloadFile(data: string, filename: string): void {
 function alertQuota(): void {
   alert(
     'localStorage 容量已满。\n\n' +
-    '请清理部分快速存档，或使用「存档到文件」将存档导出为 JSON 文件。\n' +
-    '菜单：存档 → 删除快速存档'
+      '请清理部分快速存档，或使用「存档到文件」将存档导出为 JSON 文件。\n' +
+      '菜单：存档 → 删除快速存档'
   )
 }
 
@@ -84,11 +84,22 @@ export const webPlatform: AppAPI = {
     return data ? { success: true, data, slot: target } : { success: false, message: '该槽位为空' }
   },
 
+  async loadPresetSave() {
+    try {
+      const response = await fetch('./presets/debug-save.json', { cache: 'no-store' })
+      if (!response.ok) return { success: false, message: `预设存档读取失败：${response.status}` }
+      return { success: true, data: await response.text() }
+    } catch (error) {
+      return { success: false, message: String(error) }
+    }
+  },
+
   async quickSaveSlots() {
     return Array.from({ length: QUICK_SLOT_COUNT }, (_, i) => {
       const slot = i + 1
       const data = localStorage.getItem(`${QUICK_SLOT_PREFIX}${slot}`)
-      const updatedAt = Number(localStorage.getItem(`${QUICK_SLOT_TIME_PREFIX}${slot}`)) || undefined
+      const updatedAt =
+        Number(localStorage.getItem(`${QUICK_SLOT_TIME_PREFIX}${slot}`)) || undefined
       return {
         slot,
         exists: data != null,

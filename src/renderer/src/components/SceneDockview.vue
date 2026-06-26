@@ -126,8 +126,10 @@ const dockviewComponents = {
   border-radius: 8px 8px 0 0;
 }
 
-.dockview-overlay :deep(.dv-groupview:has(.initiative-panel--transparent) .dv-tabs-and-actions-container),
-.dockview-overlay :deep(.dv-groupview-floating:has(.initiative-panel--transparent) .dv-tabs-and-actions-container) {
+.dockview-overlay
+  :deep(.dv-groupview:has(.initiative-panel--transparent) .dv-tabs-and-actions-container),
+.dockview-overlay
+  :deep(.dv-groupview-floating:has(.initiative-panel--transparent) .dv-tabs-and-actions-container) {
   background: rgba(245, 245, 245, 0.65);
   backdrop-filter: blur(2px);
 }
@@ -149,5 +151,27 @@ const dockviewComponents = {
 
 .dockview-overlay :deep(.dv-close-button) {
   color: #888;
+}
+
+@media (pointer: coarse) and (orientation: landscape) {
+  .dockview-overlay :deep(.dv-resize-container),
+  .dockview-overlay :deep(.dv-tabs-and-actions-container),
+  .dockview-overlay :deep(.dv-tab) {
+    touch-action: none;
+  }
+
+  .dockview-overlay :deep(.dv-tabs-and-actions-container) {
+    min-height: 36px;
+  }
+
+  .dockview-overlay :deep(.dv-tab) {
+    min-height: 34px;
+    align-items: center;
+  }
+
+  .dockview-overlay :deep(.dv-close-button) {
+    min-width: 32px;
+    min-height: 32px;
+  }
 }
 </style>

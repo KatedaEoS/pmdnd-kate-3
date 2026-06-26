@@ -15,11 +15,13 @@ defineProps<{
   drawMode: DrawMode
   drawColor: string
   snapEnabled: boolean
+  moveCostMode: boolean
 }>()
 
 const emit = defineEmits<{
   'draw-color-change': [value: string]
   'snap-enabled-change': [value: boolean]
+  'move-cost-mode-change': [value: boolean]
   'enter-draw-mode': [mode: DrawMode]
   'toggle-fog-visible': []
   'set-hp-display-level': [faction: string, level: number]
@@ -73,6 +75,13 @@ function emitHPDisplayLevel(faction: string, event: Event): void {
         @click="emit('snap-enabled-change', !snapEnabled)"
       >
         {{ snapEnabled ? '📏' : '📐' }}
+      </button>
+      <button
+        :class="{ active: moveCostMode }"
+        title="触摸端移动力消耗模式；桌面端仍可用 Ctrl/Command + 左键拖动 Token"
+        @click="emit('move-cost-mode-change', !moveCostMode)"
+      >
+        耗移
       </button>
     </div>
     <div class="tool-section">
@@ -176,5 +185,42 @@ function emitHPDisplayLevel(faction: string, event: Event): void {
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 4px;
   text-align: center;
+}
+
+@media (pointer: coarse) and (orientation: landscape) {
+  .toolbar {
+    top: auto;
+    right: auto;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    transform: none;
+    flex-direction: row;
+    align-items: flex-end;
+    max-width: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .tool-section {
+    flex-direction: row;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+
+  .tool-label {
+    margin: 0 2px 0 0;
+  }
+
+  .toolbar-color {
+    width: 44px;
+    height: 36px;
+  }
+
+  .toolbar button {
+    width: 46px;
+    height: 40px;
+    font-size: 14px;
+  }
 }
 </style>

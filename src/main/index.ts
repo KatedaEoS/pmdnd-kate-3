@@ -76,6 +76,27 @@ function chooseQuickLoadSlot(requestedSlot?: number): number | null {
   return latest?.slot ?? null
 }
 
+function presetSaveCandidates(): string[] {
+  return [
+    join(__dirname, '../renderer/presets/debug-save.json'),
+    join(app.getAppPath(), 'src/renderer/public/presets/debug-save.json'),
+    join(process.cwd(), 'src/renderer/public/presets/debug-save.json'),
+    join(process.cwd(), 'debug.json')
+  ]
+}
+
+function readPresetSave(): { success: boolean; data?: string; message?: string } {
+  for (const filePath of presetSaveCandidates()) {
+    if (!fs.existsSync(filePath)) continue
+    try {
+      return { success: true, data: fs.readFileSync(filePath, 'utf-8') }
+    } catch (error) {
+      return { success: false, message: String(error) }
+    }
+  }
+  return { success: false, message: '未找到预设存档文件' }
+}
+
 // IPC handlers (registered once at module level)
 ipcMain.handle('getSaveDir', () => saveDir)
 
@@ -131,6 +152,8 @@ ipcMain.handle('quickLoad', async (_event, slot?: number) => {
     return { success: false, message: String(error) }
   }
 })
+
+ipcMain.handle('loadPresetSave', async () => readPresetSave())
 
 ipcMain.removeHandler('saveState')
 ipcMain.handle('saveState', async (_event, data) => {

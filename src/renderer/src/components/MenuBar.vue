@@ -21,9 +21,11 @@ const props = defineProps<{ groups: MenuGroup[] }>()
 const emit = defineEmits<{ select: [action: string] }>()
 
 const openMenu = ref<string | null>(null)
+const openSubmenu = ref<string | null>(null)
 
 function toggleMenu(label: string): void {
   openMenu.value = openMenu.value == label ? null : label
+  openSubmenu.value = null
 }
 
 function handleGroupClick(group: MenuGroup): void {
@@ -34,13 +36,31 @@ function handleGroupClick(group: MenuGroup): void {
   toggleMenu(group.label)
 }
 
+function handleGroupHover(group: MenuGroup): void {
+  if (!openMenu.value || group.action) return
+  if (openMenu.value != group.label) {
+    openSubmenu.value = null
+  }
+  openMenu.value = group.label
+}
+
+function submenuKey(group: MenuGroup, index: number): string {
+  return `${group.label}:${index}`
+}
+
+function showSubmenu(key: string): void {
+  openSubmenu.value = key
+}
+
 function handleSelect(action: string): void {
   openMenu.value = null
+  openSubmenu.value = null
   emit('select', action)
 }
 
 function closeAll(): void {
   openMenu.value = null
+  openSubmenu.value = null
 }
 </script>
 
@@ -50,7 +70,7 @@ function closeAll(): void {
       v-for="group in groups"
       :key="group.label"
       class="menu-group"
-      @mouseenter="openMenu && !group.action && (openMenu = group.label)"
+      @mouseenter="handleGroupHover(group)"
     >
       <button
         class="menu-trigger"
@@ -65,12 +85,18 @@ function closeAll(): void {
       <div v-if="!group.action && openMenu == group.label" class="menu-dropdown">
         <template v-for="(item, i) in group.items ?? []" :key="i">
           <div v-if="item.separator" class="menu-separator" />
-          <div v-else-if="item.children?.length" class="menu-item-wrapper">
+          <div
+            v-else-if="item.children?.length"
+            class="menu-item-wrapper"
+            :class="{ 'submenu-open': openSubmenu == submenuKey(group, i) }"
+          >
             <button
               class="menu-item menu-item-parent"
               :class="{ disabled: item.disabled }"
               :disabled="item.disabled"
               :title="item.shortcut ? `${item.label}（快捷键 ${item.shortcut}）` : item.label"
+              @click.stop="showSubmenu(submenuKey(group, i))"
+              @mouseenter="openSubmenu = submenuKey(group, i)"
             >
               <span>{{ item.label }}</span>
               <span class="menu-item-meta">
@@ -172,7 +198,7 @@ function closeAll(): void {
   background: #fff;
   border: 1px solid #d0d0d0;
   border-radius: 0 0 6px 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   padding: 4px 0;
 }
 
@@ -205,11 +231,15 @@ function closeAll(): void {
   background: #fff;
   border: 1px solid #d0d0d0;
   border-radius: 0 6px 6px 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   padding: 4px 0;
 }
 
 .menu-item-wrapper:hover > .menu-submenu {
+  display: block;
+}
+
+.menu-item-wrapper.submenu-open > .menu-submenu {
   display: block;
 }
 
@@ -253,5 +283,45 @@ function closeAll(): void {
   height: 1px;
   background: #e0e0e0;
   margin: 4px 8px;
+}
+
+@media (pointer: coarse) and (orientation: landscape) {
+  .menu-bar {
+    height: 40px;
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+
+  .menu-trigger {
+    height: 36px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
+
+  .menu-dropdown {
+    min-width: 220px;
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .menu-item {
+    min-height: 38px;
+    padding: 8px 16px;
+    font-size: 14px;
+  }
+
+  .menu-item-wrapper {
+    position: static;
+  }
+
+  .menu-submenu {
+    position: static;
+    min-width: calc(100% - 12px);
+    margin: 0 0 2px 12px;
+    border-radius: 4px;
+    box-shadow: none;
+    background: #f8f8f8;
+  }
 }
 </style>

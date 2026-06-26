@@ -13,10 +13,23 @@ export interface AppAPI {
   quickSave: (
     data: string,
     slot?: number
-  ) => Promise<{ success: boolean; filePath?: string; slot?: number; updatedAt?: number; message?: string }>
+  ) => Promise<{
+    success: boolean
+    filePath?: string
+    slot?: number
+    updatedAt?: number
+    message?: string
+  }>
   quickLoad: (
     slot?: number
-  ) => Promise<{ success: boolean; data?: string; fileName?: string; slot?: number; message?: string }>
+  ) => Promise<{
+    success: boolean
+    data?: string
+    fileName?: string
+    slot?: number
+    message?: string
+  }>
+  loadPresetSave: () => Promise<{ success: boolean; data?: string; message?: string }>
   quickSaveSlots: () => Promise<QuickSaveSlotInfo[]>
   deleteQuickSave: (slot: number) => Promise<{ success: boolean; message?: string }>
   getSaveDir: () => Promise<string>
