@@ -22,20 +22,23 @@ const emit = defineEmits<{
 
 const menuRef = ref<HTMLElement | null>(null)
 
-watch(() => props.x, () => {
-  // 当菜单重新定位时，确保它在视口内
-  nextTick(() => {
-    const el = menuRef.value
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    if (rect.right > window.innerWidth) {
-      el.style.left = (props.x - rect.width) + 'px'
-    }
-    if (rect.bottom > window.innerHeight) {
-      el.style.top = (props.y - rect.height) + 'px'
-    }
-  })
-})
+watch(
+  () => props.x,
+  () => {
+    // 当菜单重新定位时，确保它在视口内
+    nextTick(() => {
+      const el = menuRef.value
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      if (rect.right > window.innerWidth) {
+        el.style.left = props.x - rect.width + 'px'
+      }
+      if (rect.bottom > window.innerHeight) {
+        el.style.top = props.y - rect.height + 'px'
+      }
+    })
+  }
+)
 
 function handleClick(action: string): void {
   emit('select', action)
@@ -57,7 +60,10 @@ import { nextTick } from 'vue'
       <div
         v-else
         class="context-menu-item"
-        :class="{ 'context-menu-item-danger': item.danger, 'context-menu-item-disabled': item.disabled }"
+        :class="{
+          'context-menu-item-danger': item.danger,
+          'context-menu-item-disabled': item.disabled
+        }"
         @click="!item.disabled && handleClick(item.action)"
       >
         {{ item.label }}
@@ -75,7 +81,7 @@ import { nextTick } from 'vue'
   border-radius: 6px;
   padding: 4px 0;
   min-width: 160px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   font-size: 13px;
   color: #333;
 }

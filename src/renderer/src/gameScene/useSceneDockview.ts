@@ -1,12 +1,20 @@
-import { ref, type Ref } from 'vue'
+import { ref, shallowRef, type Ref, type ShallowRef } from 'vue'
 import type { DockviewApi } from 'dockview-core'
 import type { DockviewReadyEvent } from 'dockview-vue'
 import { clampNumber } from './canvasGeometry'
 
 const floatingPanelMinReachableSize = 32
 
-export function useSceneDockview(containerRef: Ref<HTMLElement | null>) {
-  const dockviewApi = ref<DockviewApi | null>(null)
+type SceneDockviewController = {
+  dockviewApi: ShallowRef<DockviewApi | null>
+  dockviewReady: Ref<boolean>
+  onDockviewReady: (event: DockviewReadyEvent) => void
+  scheduleKeepFloatingPanelsReachable: () => void
+  cleanupDockview: () => void
+}
+
+export function useSceneDockview(containerRef: Ref<HTMLElement | null>): SceneDockviewController {
+  const dockviewApi = shallowRef<DockviewApi | null>(null)
   const dockviewReady = ref(false)
   let dockviewDisposables: { dispose: () => void }[] = []
   let floatingPanelObserver: MutationObserver | null = null
@@ -35,7 +43,9 @@ export function useSceneDockview(containerRef: Ref<HTMLElement | null>) {
       const nextLeft =
         rect.width <= hostRect.width ? clampNumber(currentLeft, 0, hostRect.width - rect.width) : 0
       const nextTop =
-        rect.height <= hostRect.height ? clampNumber(currentTop, 0, hostRect.height - rect.height) : 0
+        rect.height <= hostRect.height
+          ? clampNumber(currentTop, 0, hostRect.height - rect.height)
+          : 0
 
       if (Math.abs(nextLeft - currentLeft) < 0.5 && Math.abs(nextTop - currentTop) < 0.5) {
         return

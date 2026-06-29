@@ -30,6 +30,10 @@ export function assetUsesToken(asset: MapAsset): boolean {
   return asset.usage == 'token' || asset.usage == 'both'
 }
 
+export function assetUsesPortrait(asset: MapAsset): boolean {
+  return asset.usage == 'portrait'
+}
+
 export function assetUsesBackground(asset: MapAsset): boolean {
   return asset.usage == 'background' || asset.usage == 'both'
 }
@@ -75,6 +79,8 @@ export function upsertMapAsset(
       key,
       dataUrl,
       usage,
+      naturalWidth,
+      naturalHeight,
       background: {
         ...backgroundSettingsFromMap(map),
         bgWorldW: naturalWidth || map.bgWorldW,
@@ -85,6 +91,8 @@ export function upsertMapAsset(
   } else {
     asset.dataUrl = dataUrl
     asset.usage = usage
+    if (naturalWidth) asset.naturalWidth = naturalWidth
+    if (naturalHeight) asset.naturalHeight = naturalHeight
     if (naturalWidth) asset.background.bgWorldW = naturalWidth
     if (naturalHeight) asset.background.bgWorldH = naturalHeight
   }

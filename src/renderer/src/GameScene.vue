@@ -32,8 +32,11 @@ import type { ContextMenuAction } from './components/ContextMenu.vue'
 import { drawCanvasLabel } from './utils'
 import MenuBar from './components/MenuBar.vue'
 import SceneDockview from './components/SceneDockview.vue'
+import SceneTaskbar from './components/SceneTaskbar.vue'
 import SceneToolbar from './components/SceneToolbar.vue'
+import type { DockviewReadyEvent } from 'dockview-vue'
 import { readCardFromXlsx } from './model/CardReader'
+import { extractCharacterSheetPngs, type XlsxSheetImage } from './model/XlsxImages'
 import * as xlsx from 'xlsx'
 import ESSerializer from 'esserializer'
 import {
@@ -58,7 +61,8 @@ import { ResistManager, StatusManager } from './model/StatusManager'
 import {
   normalizeMapAssets,
   saveCurrentBackgroundSettingsToAsset,
-  syncTokenImagesFromAssets
+  syncTokenImagesFromAssets,
+  upsertMapAsset
 } from './model/MapAssets'
 import type { QuickSaveSlotInfo } from './platform/types'
 import {
@@ -79,6 +83,7 @@ import {
 import { coneTrianglePoints } from './model/DrawingGeometry'
 import { drawFallbackToken, isUsableTokenImage } from './gameScene/tokenRendering'
 import { useSceneDockview } from './gameScene/useSceneDockview'
+import { HistoryManager } from './gameScene/history'
 import {
   drawingIsField,
   fieldColorForField,
@@ -95,6 +100,45 @@ const containerRef = ref<HTMLDivElement | null>(null)
 // ── Dockview ──
 const { dockviewApi, onDockviewReady, scheduleKeepFloatingPanelsReachable, cleanupDockview } =
   useSceneDockview(containerRef)
+
+interface FloatingPanelBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface RegisteredPanel {
+  component: string
+  title: string
+  params: Record<string, unknown>
+}
+
+interface MinimizedPanelEntry extends RegisteredPanel, FloatingPanelBounds {
+  id: string
+  minWidth: number
+  minHeight: number
+  order: number
+}
+
+const panelRegistry = new Map<string, RegisteredPanel>()
+const minimizedPanels = ref<MinimizedPanelEntry[]>([])
+const showDesktopRestoreIds = ref<string[]>([])
+const rememberedFloatingBounds = new Map<string, FloatingPanelBounds>()
+const rememberedFloatingPanelIds = new Set(['panel-initiative'])
+let minimizedPanelOrder = 0
+let dockviewPanelMemoryDisposables: { dispose: () => void }[] = []
+
+const taskbarPanels = computed(() =>
+  minimizedPanels.value
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((panel) => ({
+      id: panel.id,
+      title: panel.title,
+      component: panel.component
+    }))
+)
 
 // ── 右键上下文菜单 ──
 const ctxMenuVisible = ref(false)
@@ -157,6 +201,7 @@ function handleContextMenu(action: string): void {
   if (ctxMenuTarget.value == 'fog') {
     if (action == 'delete-fog') {
       mm.fogPolygons.splice(ctxMenuDrawingIdx.value, 1)
+      captureHistory('删除迷雾')
       draw()
       return
     }
@@ -166,6 +211,7 @@ function handleContextMenu(action: string): void {
         drawingMoveBackup = poly.map((p) => ({ ...p }))
         dragMode = 'fogPolygon'
         dragCode = String(ctxMenuDrawingIdx.value)
+        history.beginTransaction('移动迷雾')
         const point = canvasEventPoint({
           clientX: ctxMenuX.value,
           clientY: ctxMenuY.value
@@ -185,12 +231,14 @@ function handleContextMenu(action: string): void {
     if (!d) return
     if (action == 'delete-drawing') {
       mm.drawings.splice(ctxMenuDrawingIdx.value, 1)
+      captureHistory('删除图形')
       draw()
       return
     }
     if (action == 'recolor-drawing') {
       d.color = drawColor.value
       d.alpha = drawAlpha.value
+      captureHistory('重涂图形')
       draw()
       return
     }
@@ -201,6 +249,7 @@ function handleContextMenu(action: string): void {
     }
     if (quickColors[action]) {
       d.color = quickColors[action]
+      captureHistory('重涂图形')
       draw()
       return
     }
@@ -211,6 +260,7 @@ function handleContextMenu(action: string): void {
         drawingMoveBackup = d.points.map((p) => ({ ...p }))
         dragMode = 'drawing'
         dragCode = String(idx)
+        history.beginTransaction('移动图形')
         const point = canvasEventPoint({
           clientX: ctxMenuX.value,
           clientY: ctxMenuY.value
@@ -247,6 +297,7 @@ function handleContextMenu(action: string): void {
       break
     case 'refresh-mov':
       c.currentMov = c.sizeAbility.mov
+      captureHistory('刷新移动力')
       draw()
       break
   }
@@ -258,6 +309,170 @@ function closeContextMenu(): void {
   draw()
 }
 
+function shouldRememberFloatingBounds(panelId: string): boolean {
+  return rememberedFloatingPanelIds.has(panelId)
+}
+
+function rememberFloatingBounds(panelId: string): void {
+  if (!shouldRememberFloatingBounds(panelId) || !dockviewApi.value?.getPanel(panelId)) return
+  const bounds = currentFloatingBounds(panelId)
+  if (bounds) rememberedFloatingBounds.set(panelId, bounds)
+}
+
+function rememberTrackedFloatingBounds(): void {
+  rememberedFloatingPanelIds.forEach((id) => rememberFloatingBounds(id))
+}
+
+function disposeDockviewPanelMemoryListeners(): void {
+  dockviewPanelMemoryDisposables.forEach((disposable) => disposable.dispose())
+  dockviewPanelMemoryDisposables = []
+}
+
+function handleDockviewReady(event: DockviewReadyEvent): void {
+  onDockviewReady(event)
+  disposeDockviewPanelMemoryListeners()
+  dockviewPanelMemoryDisposables = [
+    event.api.onDidLayoutChange(rememberTrackedFloatingBounds),
+    event.api.onDidAddPanel((panel) => {
+      if (shouldRememberFloatingBounds(panel.id)) {
+        nextTick(() => rememberFloatingBounds(panel.id))
+      }
+    })
+  ]
+  nextTick(rememberTrackedFloatingBounds)
+}
+
+function handleGlobalPointerFinished(): void {
+  scheduleKeepFloatingPanelsReachable()
+  requestAnimationFrame(rememberTrackedFloatingBounds)
+}
+
+function registerPanel(
+  component: string,
+  id: string,
+  title: string,
+  params?: Record<string, unknown>
+): RegisteredPanel {
+  const entry = {
+    component,
+    title,
+    params: params ?? {}
+  }
+  panelRegistry.set(id, entry)
+  return entry
+}
+
+function dockviewFloatingHostRect():
+  | DOMRect
+  | { width: number; height: number; left: number; top: number } {
+  const host = containerRef.value?.querySelector<HTMLElement>('.dv-floating-overlay-host')
+  const rect = host?.getBoundingClientRect() ?? containerRef.value?.getBoundingClientRect()
+  return rect ?? { width: window.innerWidth, height: window.innerHeight, left: 0, top: 0 }
+}
+
+function normalizeFloatingBounds(
+  component: string,
+  preferred?: Partial<FloatingPanelBounds>
+): FloatingPanelBounds & { minWidth: number; minHeight: number } {
+  const preset = panelSizePresets[component] ?? defaultPanelSizePreset
+  const hostRect = dockviewFloatingHostRect()
+  const hostWidth = hostRect.width
+  const hostHeight = hostRect.height
+  const maxWidth = Math.max(220, Math.floor(hostWidth - 24))
+  const maxHeight = Math.max(180, Math.floor(hostHeight - 48))
+  const minWidth = Math.min(preset.minWidth, maxWidth)
+  const minHeight = Math.min(preset.minHeight, maxHeight)
+  const width = clampNumber(preferred?.width ?? preset.width, minWidth, maxWidth)
+  const height = clampNumber(preferred?.height ?? preset.height, minHeight, maxHeight)
+  const x = clampNumber(preferred?.x ?? 200, 0, Math.max(0, hostWidth - width - 12))
+  const y = clampNumber(preferred?.y ?? 120, 28, Math.max(28, hostHeight - height - 12))
+  return { x, y, width, height, minWidth, minHeight }
+}
+
+function floatingBoundsFromAnchoredPosition(position: unknown): FloatingPanelBounds | null {
+  if (!position || typeof position != 'object') return null
+  const box = position as Record<string, unknown>
+  const width = Number(box.width)
+  const height = Number(box.height)
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null
+  const hostRect = dockviewFloatingHostRect()
+  const left = Number(box.left)
+  const right = Number(box.right)
+  const top = Number(box.top)
+  const bottom = Number(box.bottom)
+  const x = Number.isFinite(left) ? left : hostRect.width - right - width
+  const y = Number.isFinite(top) ? top : hostRect.height - bottom - height
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  return { x, y, width, height }
+}
+
+function floatingBoundsFromDockviewLayout(panelId: string): FloatingPanelBounds | null {
+  const layout = dockviewApi.value?.toJSON()
+  const floatingGroups = layout?.floatingGroups ?? []
+  for (const group of floatingGroups) {
+    if (group.data.views.includes(panelId)) {
+      return floatingBoundsFromAnchoredPosition(group.position)
+    }
+  }
+  return null
+}
+
+function floatingBoundsFromPanelElement(panelId: string): FloatingPanelBounds | null {
+  const api = dockviewApi.value
+  if (!api) return null
+  const panel = api.getPanel(panelId)
+  const groupElement = (panel?.group as unknown as { element?: HTMLElement } | undefined)?.element
+  const resizeElement = groupElement?.closest<HTMLElement>('.dv-resize-container') ?? groupElement
+  if (!resizeElement) return null
+  const hostRect = dockviewFloatingHostRect()
+  const rect = resizeElement.getBoundingClientRect()
+  return {
+    x: rect.left - hostRect.left,
+    y: rect.top - hostRect.top,
+    width: rect.width,
+    height: rect.height
+  }
+}
+
+function currentFloatingBounds(panelId: string): FloatingPanelBounds | null {
+  return floatingBoundsFromDockviewLayout(panelId) ?? floatingBoundsFromPanelElement(panelId)
+}
+
+function addFloatingPanel(
+  component: string,
+  id: string,
+  title: string,
+  params?: Record<string, unknown>,
+  preferredBounds?: Partial<FloatingPanelBounds>
+): void {
+  const api = dockviewApi.value
+  if (!api) return
+  const bounds = normalizeFloatingBounds(
+    component,
+    preferredBounds ??
+      (shouldRememberFloatingBounds(id) ? rememberedFloatingBounds.get(id) : undefined)
+  )
+  registerPanel(component, id, title, params)
+  api.addPanel({
+    id,
+    component,
+    title,
+    params: params ?? {},
+    minimumWidth: bounds.minWidth,
+    minimumHeight: bounds.minHeight,
+    floating: {
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height
+    }
+  })
+  if (shouldRememberFloatingBounds(id)) {
+    rememberedFloatingBounds.set(id, bounds)
+  }
+  scheduleKeepFloatingPanelsReachable()
+}
+
 // 打开浮窗面板
 function openPanel(
   component: string,
@@ -265,40 +480,123 @@ function openPanel(
   title: string,
   params?: Record<string, unknown>
 ): void {
+  const minimizedIdx = minimizedPanels.value.findIndex((panel) => panel.id == id)
+  if (minimizedIdx >= 0) {
+    registerPanel(component, id, title, params)
+    Object.assign(minimizedPanels.value[minimizedIdx], {
+      component,
+      title,
+      params: params ?? {}
+    })
+    if (restoreMinimizedPanel(id)) return
+  }
   const api = dockviewApi.value
   if (!api) return
+  registerPanel(component, id, title, params)
   const existing = api.getPanel(id)
   if (existing) {
     existing.focus()
     return
   }
-  const preset = panelSizePresets[component] ?? defaultPanelSizePreset
-  const hostRect = containerRef.value?.getBoundingClientRect()
-  const hostWidth = hostRect?.width ?? window.innerWidth
-  const hostHeight = hostRect?.height ?? window.innerHeight
-  const maxWidth = Math.max(220, Math.floor(hostWidth - 24))
-  const maxHeight = Math.max(180, Math.floor(hostHeight - 48))
-  const minWidth = Math.min(preset.minWidth, maxWidth)
-  const minHeight = Math.min(preset.minHeight, maxHeight)
-  const width = clampNumber(preset.width, minWidth, maxWidth)
-  const height = clampNumber(preset.height, minHeight, maxHeight)
-  const x = clampNumber(200, 0, Math.max(0, hostWidth - width - 12))
-  const y = clampNumber(120, 28, Math.max(28, hostHeight - height - 12))
-  api.addPanel({
-    id,
+  addFloatingPanel(component, id, title, params)
+}
+
+function buildMinimizedPanelEntry(panelId: string): MinimizedPanelEntry | null {
+  const api = dockviewApi.value
+  const panel = api?.getPanel(panelId)
+  if (!panel) return null
+  const state = panel.toJSON()
+  const registered = panelRegistry.get(panelId)
+  const component = registered?.component ?? state.contentComponent
+  if (!component) return null
+  const title = panel.title ?? registered?.title ?? state.title ?? panelId
+  const params =
+    (state.params as Record<string, unknown> | undefined) ??
+    registered?.params ??
+    ({} as Record<string, unknown>)
+  const bounds = normalizeFloatingBounds(component, currentFloatingBounds(panelId) ?? undefined)
+  return {
+    id: panelId,
     component,
     title,
-    params: params ?? {},
-    minimumWidth: minWidth,
-    minimumHeight: minHeight,
-    floating: {
-      x,
-      y,
-      width,
-      height
-    }
-  })
-  scheduleKeepFloatingPanelsReachable()
+    params,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    minWidth: bounds.minWidth,
+    minHeight: bounds.minHeight,
+    order: ++minimizedPanelOrder
+  }
+}
+
+function minimizePanel(panelId: string): void {
+  const panel = dockviewApi.value?.getPanel(panelId)
+  if (!panel) return
+  const entry = buildMinimizedPanelEntry(panelId)
+  if (!entry) return
+  if (shouldRememberFloatingBounds(panelId)) {
+    rememberedFloatingBounds.set(panelId, entry)
+  }
+  const existingIdx = minimizedPanels.value.findIndex((panel) => panel.id == panelId)
+  if (existingIdx >= 0) minimizedPanels.value.splice(existingIdx, 1, entry)
+  else minimizedPanels.value.push(entry)
+  panel.api.close()
+}
+
+function restoreMinimizedPanel(panelId: string): boolean {
+  const idx = minimizedPanels.value.findIndex((panel) => panel.id == panelId)
+  if (idx < 0) return false
+  const entry = minimizedPanels.value[idx]
+  const api = dockviewApi.value
+  if (!api) return false
+  const existing = api.getPanel(panelId)
+  minimizedPanels.value.splice(idx, 1)
+  showDesktopRestoreIds.value = showDesktopRestoreIds.value.filter((id) => id != panelId)
+  if (existing) {
+    existing.focus()
+    return true
+  }
+  addFloatingPanel(entry.component, entry.id, entry.title, entry.params, entry)
+  return true
+}
+
+function removeMinimizedPanel(panelId: string): void {
+  const idx = minimizedPanels.value.findIndex((panel) => panel.id == panelId)
+  if (idx >= 0) minimizedPanels.value.splice(idx, 1)
+  showDesktopRestoreIds.value = showDesktopRestoreIds.value.filter((id) => id != panelId)
+}
+
+function isPanelMinimized(panelId: string): boolean {
+  return minimizedPanels.value.some((panel) => panel.id == panelId)
+}
+
+function currentDockviewPanelIds(): string[] {
+  return dockviewApi.value?.panels.map((panel) => panel.id) ?? []
+}
+
+function restoreAllMinimizedPanels(): void {
+  const ids = minimizedPanels.value
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((panel) => panel.id)
+  ids.forEach((id) => restoreMinimizedPanel(id))
+}
+
+function toggleShowDesktop(): void {
+  const visiblePanelIds = currentDockviewPanelIds()
+  if (visiblePanelIds.length > 0) {
+    showDesktopRestoreIds.value = visiblePanelIds
+    visiblePanelIds.forEach((id) => minimizePanel(id))
+    return
+  }
+  if (showDesktopRestoreIds.value.length > 0) {
+    const restoreIds = [...showDesktopRestoreIds.value]
+    showDesktopRestoreIds.value = []
+    restoreIds.forEach((id) => restoreMinimizedPanel(id))
+    return
+  }
+  restoreAllMinimizedPanels()
 }
 
 function togglePanel(
@@ -307,8 +605,10 @@ function togglePanel(
   title: string,
   params?: Record<string, unknown>
 ): void {
+  if (restoreMinimizedPanel(id)) return
   const existing = dockviewApi.value?.getPanel(id)
   if (existing) {
+    rememberFloatingBounds(id)
     existing.api.close()
     return
   }
@@ -329,6 +629,7 @@ function openFieldEditorForTemplate(): void {
 }
 
 function toggleFieldEditorForTemplate(): void {
+  if (restoreMinimizedPanel('panel-field-editor')) return
   const existing = dockviewApi.value?.getPanel('panel-field-editor')
   if (existing) {
     existing.api.close()
@@ -349,6 +650,7 @@ function maybeAttachFieldToNewDrawing<T extends { type: string; field?: unknown 
 }
 
 provide('openPanel', openPanel)
+provide('minimizeDockviewPanel', minimizePanel)
 
 function centerOnToken(code: string): void {
   const t = mm.tokens.find((x) => x.code == code)
@@ -368,6 +670,7 @@ provide('requestSceneDraw', draw)
 // ── 菜单栏 ──
 const xlsxFileInput = ref<HTMLInputElement | null>(null)
 const quickSaveSlots = ref<QuickSaveSlotInfo[]>([])
+const history = new HistoryManager()
 
 function currentQuickSlots(): QuickSaveSlotInfo[] {
   if (quickSaveSlots.value.length > 0) return quickSaveSlots.value
@@ -377,6 +680,23 @@ function currentQuickSlots(): QuickSaveSlotInfo[] {
 const menuGroups = computed(() => {
   const slots = currentQuickSlots()
   return [
+    {
+      label: '编辑',
+      items: [
+        {
+          label: '撤销',
+          shortcut: 'Ctrl/⌘+Z',
+          action: 'history-undo',
+          disabled: !history.canUndo.value
+        },
+        {
+          label: '重做',
+          shortcut: 'Ctrl/⌘+Shift+Z',
+          action: 'history-redo',
+          disabled: !history.canRedo.value
+        }
+      ]
+    },
     {
       label: '角色',
       items: [
@@ -536,6 +856,89 @@ async function deleteQuickSlot(slot: number): Promise<void> {
   await refreshQuickSaveSlots()
 }
 
+function characterPortraitAssetKey(code: string): string {
+  return `portrait:${code}`
+}
+
+async function importCharacterSheetImages(
+  creature: Creature,
+  buffer: ArrayBuffer
+): Promise<boolean> {
+  const images = extractCharacterSheetPngs(buffer)
+  if (images.length == 0) return false
+
+  const sorted = [...images].sort((a, b) => b.area - a.area)
+  const portraitSource = sorted[0]
+  const tokenSource = sorted.length == 1 ? sorted[0] : sorted[1]
+  const code = creature.code()
+
+  const tokenAsset = upsertMapAsset(
+    mm,
+    code,
+    tokenSource.dataUrl,
+    'token',
+    tokenSource.width,
+    tokenSource.height
+  )
+  tokenAsset.tokenForCode = code
+
+  const portrait = await normalizePortraitToThreeFour(portraitSource)
+  const portraitAsset = upsertMapAsset(
+    mm,
+    characterPortraitAssetKey(code),
+    portrait.dataUrl,
+    'portrait',
+    portrait.width,
+    portrait.height
+  )
+  portraitAsset.portraitForCode = code
+
+  return true
+}
+
+async function normalizePortraitToThreeFour(
+  source: XlsxSheetImage
+): Promise<{ dataUrl: string; width: number; height: number }> {
+  try {
+    const img = await loadDataUrlImage(source.dataUrl)
+    const sourceWidth = img.naturalWidth || source.width
+    const sourceHeight = img.naturalHeight || source.height
+    const unit = Math.max(Math.ceil(sourceWidth / 3), Math.ceil(sourceHeight / 4), 1)
+    const width = unit * 3
+    const height = unit * 4
+    if (width == sourceWidth && height == sourceHeight) {
+      return { dataUrl: source.dataUrl, width, height }
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return { dataUrl: source.dataUrl, width: sourceWidth, height: sourceHeight }
+
+    ctx.clearRect(0, 0, width, height)
+    ctx.drawImage(
+      img,
+      (width - sourceWidth) / 2,
+      (height - sourceHeight) / 2,
+      sourceWidth,
+      sourceHeight
+    )
+    return { dataUrl: canvas.toDataURL('image/png'), width, height }
+  } catch {
+    return { dataUrl: source.dataUrl, width: source.width, height: source.height }
+  }
+}
+
+function loadDataUrlImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('图片读取失败'))
+    img.src = dataUrl
+  })
+}
+
 function onXlsxChange(event: Event): void {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
@@ -543,15 +946,20 @@ function onXlsxChange(event: Event): void {
     const file = input.files[i]
     if (!file) continue
     const reader = new FileReader()
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       if (!e.target?.result) return
-      const wb = xlsx.read(e.target.result as ArrayBuffer, { type: 'array' })
+      if (!(e.target.result instanceof ArrayBuffer)) return
+      const buffer = e.target.result
+      const wb = xlsx.read(buffer, { type: 'array' })
       try {
         const creature = readCardFromXlsx(wb)
+        const importedImages = await importCharacterSheetImages(creature, buffer)
         const idx = Creatures.value.findIndex((c) => c.code() == creature.code())
         if (idx >= 0) Creatures.value[idx] = creature
         else Creatures.value.push(creature)
         ensureToken(creature.code())
+        if (importedImages) loadTokenImages()
+        captureHistory('导入角色')
         nextTick(() => draw())
       } catch (err) {
         alert(err instanceof Error ? err.message : '导入失败')
@@ -563,6 +971,14 @@ function onXlsxChange(event: Event): void {
 }
 
 function handleMenuSelect(action: string): void {
+  if (action == 'history-undo') {
+    undoHistory()
+    return
+  }
+  if (action == 'history-redo') {
+    redoHistory()
+    return
+  }
   const quickSaveMatch = action.match(/^quick-save-slot-(\d+)$/)
   if (quickSaveMatch) {
     saveQuickSlot(Number(quickSaveMatch[1]))
@@ -668,6 +1084,18 @@ function setHPDisplayLevel(faction: string, level: number): void {
   draw()
 }
 
+function setRenderScale(scale: number): void {
+  const previous = currentRenderScale()
+  const next = normalizeRenderScale(scale)
+  if (previous == next) return
+  const ratio = next / previous
+  mm.renderScale = next
+  mm.viewX *= ratio
+  mm.viewY *= ratio
+  mm.viewScale = clampNumber(mm.viewScale * ratio, minViewScale(), maxViewScale())
+  fitCanvas()
+}
+
 function toggleGridSetup(): void {
   gridSetupMode.value = !gridSetupMode.value
   if (gridSetupMode.value) {
@@ -686,11 +1114,41 @@ provide('toggleGridSetup', toggleGridSetup)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const canvasWidth = ref<number>(1200)
 const canvasHeight = ref<number>(800)
-const renderScale = 4 as const
-mm.renderScale = 4
+const defaultRenderScale = 4
+const baseMinViewScale = 0.1 / defaultRenderScale
+const baseMaxViewScale = 10 / defaultRenderScale
+mm.renderScale = normalizeRenderScale(mm.renderScale)
 mm.viewScale = 4
 
 let resizeObserver: ResizeObserver | null = null
+
+function normalizeRenderScale(value: unknown): number {
+  const n = Math.round(Number(value))
+  if (!Number.isFinite(n)) return defaultRenderScale
+  return clampNumber(n, 1, 8)
+}
+
+function currentRenderScale(): number {
+  return normalizeRenderScale(mm.renderScale)
+}
+
+function minViewScale(): number {
+  return baseMinViewScale * currentRenderScale()
+}
+
+function maxViewScale(): number {
+  return baseMaxViewScale * currentRenderScale()
+}
+
+const backgroundImageStyle = computed<Record<string, string>>(() => {
+  const rs = currentRenderScale()
+  const visualScale = mm.viewScale / rs
+  return {
+    width: `${mm.bgWorldW}px`,
+    height: `${mm.bgWorldH}px`,
+    transform: `translate3d(${mm.viewX / rs}px, ${mm.viewY / rs}px, 0) scale(${visualScale})`
+  }
+})
 
 // 以下函数将在后续阶段集成（Token 操作、图片、背景）
 function creatureFootprint(code: string): number {
@@ -724,9 +1182,6 @@ function findTokenImage(code: string, name: string): HTMLImageElement | undefine
   return tokenImgCache.value.get(name)
 }
 
-// ── 背景图片 ──
-const bgImage = ref<HTMLImageElement | null>(null)
-
 function loadBgFromDataUrl(): void {
   normalizeMapAssets(mm)
   const activeAsset = mm.currentBackgroundKey
@@ -736,18 +1191,10 @@ function loadBgFromDataUrl(): void {
     mm.bgDataUrl = activeAsset.dataUrl
   }
   if (!mm.bgDataUrl) {
-    bgImage.value = null
     draw()
     return
   }
-  if (mm.bgDataUrl) {
-    const img = new Image()
-    img.onload = () => {
-      bgImage.value = img
-      draw()
-    }
-    img.src = mm.bgDataUrl
-  }
+  draw()
 }
 
 // ── 绘制 ──
@@ -766,15 +1213,7 @@ function draw(): void {
   const vx = mm.viewX
   const vy = mm.viewY
   ctx.setTransform(s, 0, 0, s, vx, vy)
-  const rs = renderScale
-
-  // 背景
-  if (bgImage.value) {
-    ctx.drawImage(bgImage.value, 0, 0, mm.bgWorldW, mm.bgWorldH)
-  } else {
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, mm.bgWorldW, mm.bgWorldH)
-  }
+  const rs = currentRenderScale()
 
   // 网格
   const cs = mm.cellSize
@@ -828,13 +1267,18 @@ function draw(): void {
     const tokImg = findTokenImage(c.code(), c.name())
 
     ctx.shadowColor = factionColor[c.faction] ?? t.color
-    ctx.shadowBlur = Math.max(2, size * 0.15)
+    ctx.shadowBlur = Math.max(2, size * 0.15) * 2 * (rs / defaultRenderScale)
     if (isUsableTokenImage(tokImg)) {
       const iw = tokImg.naturalWidth
       const ih = tokImg.naturalHeight
       const scale = Math.min(size / iw, size / ih)
-      ctx.imageSmoothingEnabled = iw * scale * mm.viewScale <= iw
-      ctx.drawImage(tokImg, cx - (iw * scale) / 2, cy - (ih * scale) / 2, iw * scale, ih * scale)
+      const drawW = iw * scale
+      const drawH = ih * scale
+      const previousSmoothing = ctx.imageSmoothingEnabled
+      const canvasScale = rs * (mm.viewScale || 1)
+      ctx.imageSmoothingEnabled = drawW * canvasScale <= iw && drawH * canvasScale <= ih
+      ctx.drawImage(tokImg, cx - drawW / 2, cy - drawH / 2, drawW, drawH)
+      ctx.imageSmoothingEnabled = previousSmoothing
     } else {
       drawFallbackToken(ctx, c, cx, cy, size, factionColor[c.faction] ?? t.color, mm.viewScale)
     }
@@ -1465,6 +1909,7 @@ function finalizeSector(): void {
       angle: angleDeg
     } as any)
   )
+  captureHistory('绘制扇形')
   drawPending.value = 'none'
   drawOrigin.value = null
   drawPreviewPoint.value = null
@@ -1508,6 +1953,7 @@ function finalizeLine(): void {
       angle: 0
     } as any)
   )
+  captureHistory('绘制线形')
   drawPending.value = 'none'
   drawOrigin.value = null
   drawPreviewPoint.value = null
@@ -1535,7 +1981,7 @@ function dashedLine(
   dash: number[]
 ): void {
   ctx.strokeStyle = 'rgba(0,0,0,0.5)'
-  ctx.lineWidth = w + 2 * renderScale
+  ctx.lineWidth = w + 2 * currentRenderScale()
   ctx.setLineDash(dash)
   ctx.beginPath()
   ctx.moveTo(x1, y1)
@@ -1744,7 +2190,10 @@ function triggerAutoAttack(
     angle: 0
   })
 
-  openPanel('MultiTargetPanel', 'panel-multi', '施法', {})
+  if (!isPanelMinimized('panel-multi')) {
+    openPanel('MultiTargetPanel', 'panel-multi', '施法', {})
+  }
+  captureHistory('自动攻击')
 }
 
 function canvasPointFromClient(
@@ -1793,6 +2242,7 @@ function openCanvasContextMenuAt(clientX: number, clientY: number): void {
     drawingMoveBackup = null
     dragMode = null
     draw()
+    history.endTransaction(historySnapshot())
     return
   }
   if (dragMode) return
@@ -1980,6 +2430,18 @@ function canvasPointerCancel(e: PointerEvent): void {
   } else if (dragMode == 'pinch' && activeCanvasPointers.size < 2) {
     dragMode = null
     draw()
+  } else if (
+    dragMode == 'token' ||
+    dragMode == 'drawing' ||
+    dragMode == 'fogPolygon' ||
+    dragMode == 'origin' ||
+    dragMode == 'oneMeter'
+  ) {
+    dragMode = null
+    dragMoveCost = false
+    drawingMoveBackup = null
+    draw()
+    history.endTransaction(historySnapshot())
   }
   if (canvasRef.value?.hasPointerCapture(e.pointerId)) {
     canvasRef.value.releasePointerCapture(e.pointerId)
@@ -2064,6 +2526,7 @@ function canvasMouseDown(e: MouseEvent): void {
         if (currentPolygon.value.length >= 3) {
           if (drawMode.value == 'fog') {
             mm.fogPolygons.push([...currentPolygon.value])
+            captureHistory('绘制迷雾')
           } else {
             mm.drawings.push(
               maybeAttachFieldToNewDrawing({
@@ -2075,6 +2538,7 @@ function canvasMouseDown(e: MouseEvent): void {
                 angle: 0
               } as any)
             )
+            captureHistory('绘制多边形')
           }
         }
         currentPolygon.value = []
@@ -2118,6 +2582,7 @@ function canvasMouseDown(e: MouseEvent): void {
     const oneMX = ox + cs
     if (Math.hypot(wx - oneMX, wy - oy) < r) {
       dragMode = 'oneMeter'
+      history.beginTransaction('调整格子')
       dragStartX = wx
       dragStartY = wy
       panStartOffX = ox
@@ -2126,6 +2591,7 @@ function canvasMouseDown(e: MouseEvent): void {
     }
     if (Math.hypot(wx - ox, wy - oy) < r) {
       dragMode = 'origin'
+      history.beginTransaction('调整格子')
       panStartOffX = ox
       panStartOffY = oy
       dragStartX = wx
@@ -2152,6 +2618,7 @@ function canvasMouseDown(e: MouseEvent): void {
       if (e.button == 2) return
       if (e.button != 0) return
       dragMode = 'token'
+      history.beginTransaction('移动 Token')
       dragCode = t.code
       dragStartX = t.x
       dragStartY = t.y
@@ -2356,6 +2823,7 @@ function canvasMouseMove(e: MouseEvent): void {
 }
 
 function canvasMouseUp(): void {
+  const completedDragMode = dragMode
   if (dragMode == 'pinch') {
     dragMode = null
     draw()
@@ -2430,6 +2898,7 @@ function canvasMouseUp(): void {
         width: drawWidth.value,
         angle: 0
       } as any)
+      captureHistory('绘制箭头')
     } else {
       mm.drawings.push(
         maybeAttachFieldToNewDrawing({
@@ -2441,6 +2910,7 @@ function canvasMouseUp(): void {
           angle: dm == 'sector' || dm == 'cone' ? drawAngle.value : 0
         } as any)
       )
+      captureHistory('绘制图形')
     }
     drawOrigin.value = null
     drawPreviewPoint.value = null
@@ -2449,6 +2919,15 @@ function canvasMouseUp(): void {
   dragMoveCost = false
   drawingMoveBackup = null
   draw()
+  if (
+    completedDragMode == 'token' ||
+    completedDragMode == 'drawing' ||
+    completedDragMode == 'fogPolygon' ||
+    completedDragMode == 'origin' ||
+    completedDragMode == 'oneMeter'
+  ) {
+    history.endTransaction(historySnapshot())
+  }
 }
 
 // ── 生命周期 ──
@@ -2458,7 +2937,7 @@ function fitCanvas(): void {
   if (!container || !canvas) return
   const cw = container.clientWidth
   const ch = container.clientHeight
-  const scale = renderScale
+  const scale = currentRenderScale()
   canvasWidth.value = Math.floor(cw * scale)
   canvasHeight.value = Math.floor(ch * scale)
   canvas.style.width = cw + 'px'
@@ -2472,6 +2951,7 @@ onMounted(() => {
   loadBgFromDataUrl()
   refreshQuickSaveSlots()
   fitCanvas()
+  history.initialize(historySnapshot())
   if (containerRef.value) {
     resizeObserver = new ResizeObserver(() => {
       fitCanvas()
@@ -2482,8 +2962,8 @@ onMounted(() => {
   nextTick(() => draw())
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
-  window.addEventListener('pointerup', scheduleKeepFloatingPanelsReachable, true)
-  window.addEventListener('pointercancel', scheduleKeepFloatingPanelsReachable, true)
+  window.addEventListener('pointerup', handleGlobalPointerFinished, true)
+  window.addEventListener('pointercancel', handleGlobalPointerFinished, true)
   if (window.api) {
     window.api.onAutoSave(async () => {
       if (hasContent()) {
@@ -2538,7 +3018,8 @@ onMounted(() => {
       mm.bgWorldH,
       mm.viewX,
       mm.viewY,
-      mm.viewScale
+      mm.viewScale,
+      mm.renderScale
     ],
     () => {
       const asset = mm.currentBackgroundKey
@@ -2567,6 +3048,25 @@ onMounted(() => {
       draw()
     }
   )
+  watch(
+    () => [
+      Creatures.value,
+      envMemory.value,
+      mm,
+      statusMemory.value,
+      mainMemory.value,
+      toolsMemory.value,
+      fieldEditMemory.value,
+      surviveMemory.value,
+      characterMemory.value,
+      battleMemory.value,
+      battleMemoryHeal.value,
+      battleMemoryStatus.value,
+      moveMemory.value
+    ],
+    () => scheduleHistoryCapture(),
+    { deep: true, flush: 'post' }
+  )
 })
 
 onBeforeUnmount(() => {
@@ -2576,14 +3076,28 @@ onBeforeUnmount(() => {
   }
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('keyup', onKeyUp)
-  window.removeEventListener('pointerup', scheduleKeepFloatingPanelsReachable, true)
-  window.removeEventListener('pointercancel', scheduleKeepFloatingPanelsReachable, true)
+  window.removeEventListener('pointerup', handleGlobalPointerFinished, true)
+  window.removeEventListener('pointercancel', handleGlobalPointerFinished, true)
+  history.dispose()
+  disposeDockviewPanelMemoryListeners()
   cleanupDockview()
 })
 
 function onKeyDown(e: KeyboardEvent): void {
   if (e.key == 'Control' || e.key == 'Meta') {
     ctrlPressed = true
+    return
+  }
+  const key = e.key.toLowerCase()
+  if ((e.ctrlKey || e.metaKey) && key == 'z') {
+    e.preventDefault()
+    if (e.shiftKey) redoHistory()
+    else undoHistory()
+    return
+  }
+  if (e.ctrlKey && !e.metaKey && key == 'y') {
+    e.preventDefault()
+    redoHistory()
     return
   }
   if (e.key == 'F5') {
@@ -2622,7 +3136,6 @@ function onKeyDown(e: KeyboardEvent): void {
     return
   }
 
-  const key = e.key.toLowerCase()
   if (key == 'l') {
     e.preventDefault()
     togglePanel('CharacterListPanel', 'panel-chars', '角色列表', {})
@@ -2662,7 +3175,12 @@ function characterMemorySaveData(): Record<string, unknown> {
   }
 }
 
-function ESSerializerSerialize(): string {
+interface SerializeStateOptions {
+  includeView?: boolean
+}
+
+function ESSerializerSerialize(options: SerializeStateOptions = {}): string {
+  const includeView = options.includeView ?? true
   const data = {
     saveVersion: 2,
     creatures: Creatures.value,
@@ -2677,9 +3195,13 @@ function ESSerializerSerialize(): string {
       cellSize: mm.cellSize,
       offsetX: mm.offsetX,
       offsetY: mm.offsetY,
-      viewX: mm.viewX,
-      viewY: mm.viewY,
-      viewScale: mm.viewScale,
+      ...(includeView
+        ? {
+            viewX: mm.viewX,
+            viewY: mm.viewY,
+            viewScale: mm.viewScale
+          }
+        : {}),
       bgDataUrl: mm.bgDataUrl,
       bgWorldW: mm.bgWorldW,
       bgWorldH: mm.bgWorldH,
@@ -2707,6 +3229,7 @@ function ESSerializerSerialize(): string {
       currentInitiativeIdx: statusMemory.value.currentInitiativeIdx,
       activeInitiativeCodes: Creatures.value.filter((c) => c.inRound).map((c) => c.code()),
       initiativeTransparent: statusMemory.value.initiativeTransparent,
+      initiativeControlsExpanded: statusMemory.value.initiativeControlsExpanded,
       newStatus: statusMemory.value.newStatus
     },
     main: {
@@ -2736,6 +3259,30 @@ function ESSerializerSerialize(): string {
   return ESSerializer.serialize(data)
 }
 
+function historySnapshot(): string {
+  return ESSerializerSerialize({ includeView: false })
+}
+
+function captureHistory(label = '操作'): void {
+  history.capture(historySnapshot(), label)
+}
+
+function scheduleHistoryCapture(label = '编辑'): void {
+  history.captureDebounced(historySnapshot, label)
+}
+
+function undoHistory(): void {
+  const snapshot = history.undo()
+  if (!snapshot) return
+  loadFromJson(snapshot, { clearHistory: false, preserveView: true })
+}
+
+function redoHistory(): void {
+  const snapshot = history.redo()
+  if (!snapshot) return
+  loadFromJson(snapshot, { clearHistory: false, preserveView: true })
+}
+
 async function loadFromQuickSave(): Promise<void> {
   const result = await window.api.quickLoad()
   if (result.success && result.data) loadFromJson(result.data)
@@ -2748,7 +3295,7 @@ function canvasWheel(e: WheelEvent): void {
   if (!point) return
   const oldScale = mm.viewScale
   const delta = e.deltaY > 0 ? 0.9 : 1.1
-  mm.viewScale = Math.max(0.1, Math.min(10, oldScale * delta))
+  mm.viewScale = clampNumber(oldScale * delta, minViewScale(), maxViewScale())
   // 缩放中心为鼠标位置
   mm.viewX = point.mx - (point.mx - mm.viewX) * (mm.viewScale / oldScale)
   mm.viewY = point.my - (point.my - mm.viewY) * (mm.viewScale / oldScale)
@@ -2759,6 +3306,7 @@ async function saveToFile(): Promise<void> {
   if (window.api && hasContent()) {
     const result = await window.api.saveState(ESSerializerSerialize())
     if (result.success) console.log('Saved to:', result.filePath)
+    else if (result.message) alert(result.message)
   }
 }
 
@@ -2790,31 +3338,50 @@ const ESS_CLASSES = [
   Creature
 ]
 
-function loadFromJson(json: string): void {
-  const loaded = ESSerializer.deserialize(json, ESS_CLASSES)
-  if (loaded && typeof loaded === 'object' && !Array.isArray(loaded)) {
-    const data = loaded as Record<string, unknown>
-    if (data.creatures) {
-      const arr = data.creatures as Creature[]
-      Creatures.value.length = 0
-      for (const c of arr) {
-        c.validate()
-        Creatures.value.push(c)
+interface LoadJsonOptions {
+  clearHistory?: boolean
+  preserveView?: boolean
+}
+
+function loadFromJson(json: string, options: LoadJsonOptions = {}): void {
+  const clearHistory = options.clearHistory ?? true
+  const preserveView = options.preserveView ?? false
+  const wasRestoring = history.isRestoring.value
+  history.isRestoring.value = true
+  try {
+    const loaded = ESSerializer.deserialize(json, ESS_CLASSES)
+    if (loaded && typeof loaded === 'object' && !Array.isArray(loaded)) {
+      const data = loaded as Record<string, unknown>
+      if (data.creatures) {
+        const arr = data.creatures as Creature[]
+        Creatures.value.length = 0
+        for (const c of arr) {
+          c.validate()
+          Creatures.value.push(c)
+        }
       }
+      loadEnvData((data.env as Record<string, unknown>) ?? {})
+      loadMapData((data.map as Record<string, unknown>) ?? {}, { preserveView })
+      loadStatusData((data.status as Record<string, unknown>) ?? {})
+      loadContextData(data)
     }
-    loadEnvData((data.env as Record<string, unknown>) ?? {})
-    loadMapData((data.map as Record<string, unknown>) ?? {})
-    loadStatusData((data.status as Record<string, unknown>) ?? {})
-    loadContextData(data)
+    // 重置绘图状态
+    drawMode.value = 'none'
+    drawOrigin.value = null
+    drawPreviewPoint.value = null
+    drawPending.value = 'none'
+    currentPolygon.value = []
+    dragMode = null
+    if (clearHistory) {
+      minimizedPanels.value = []
+      showDesktopRestoreIds.value = []
+    }
+    draw()
+    if (clearHistory) history.clear(historySnapshot())
+    else history.markRestored(historySnapshot())
+  } finally {
+    history.isRestoring.value = wasRestoring
   }
-  // 重置绘图状态
-  drawMode.value = 'none'
-  drawOrigin.value = null
-  drawPreviewPoint.value = null
-  drawPending.value = 'none'
-  currentPolygon.value = []
-  dragMode = null
-  draw()
 }
 
 function loadEnvData(data: Record<string, unknown>): void {
@@ -2914,15 +3481,23 @@ function loadContextData(data: Record<string, unknown>): void {
   )
 }
 
-function loadMapData(m: Record<string, unknown>): void {
+function loadMapData(m: Record<string, unknown>, options: { preserveView?: boolean } = {}): void {
+  const previousView = {
+    viewX: mm.viewX,
+    viewY: mm.viewY,
+    viewScale: mm.viewScale
+  }
   Object.assign(mm, new MapMemory())
   if (m.tokens) mm.tokens = m.tokens as typeof mm.tokens
   if (m.cellSize) mm.cellSize = m.cellSize as number
   if (m.offsetX !== undefined) mm.offsetX = m.offsetX as number
   if (m.offsetY !== undefined) mm.offsetY = m.offsetY as number
   if (m.viewX !== undefined) mm.viewX = m.viewX as number
+  else if (options.preserveView) mm.viewX = previousView.viewX
   if (m.viewY !== undefined) mm.viewY = m.viewY as number
+  else if (options.preserveView) mm.viewY = previousView.viewY
   if (m.viewScale !== undefined) mm.viewScale = m.viewScale as number
+  else if (options.preserveView) mm.viewScale = previousView.viewScale
   if (m.bgDataUrl !== undefined) {
     mm.bgDataUrl = m.bgDataUrl as string
     loadBgFromDataUrl()
@@ -2946,7 +3521,8 @@ function loadMapData(m: Record<string, unknown>): void {
   if (m.collapsedSections) mm.collapsedSections = m.collapsedSections as string[]
   if (m.initiativeBarEnabled !== undefined)
     mm.initiativeBarEnabled = m.initiativeBarEnabled as boolean
-  if (m.renderScale !== undefined) mm.renderScale = m.renderScale as number
+  if (m.renderScale !== undefined) mm.renderScale = normalizeRenderScale(m.renderScale)
+  else mm.renderScale = normalizeRenderScale(mm.renderScale)
   if (m.fogVisible !== undefined) mm.fogVisible = m.fogVisible as boolean
   normalizeMapAssets(mm)
   loadTokenImages()
@@ -2994,7 +3570,16 @@ async function buildSaveJson(): Promise<void> {
       @enter-draw-mode="enterDrawMode"
       @toggle-fog-visible="toggleFogVisible"
       @set-hp-display-level="setHPDisplayLevel"
+      @render-scale-change="setRenderScale"
     />
+    <div class="scene-background-layer" aria-hidden="true">
+      <img
+        v-if="mm.bgDataUrl"
+        class="scene-background-image"
+        :src="mm.bgDataUrl"
+        :style="backgroundImageStyle"
+      />
+    </div>
     <canvas
       ref="canvasRef"
       class="scene-canvas"
@@ -3008,7 +3593,13 @@ async function buildSaveJson(): Promise<void> {
       @wheel.prevent="canvasWheel"
       @contextmenu.prevent="canvasContextMenu"
     />
-    <SceneDockview @ready="onDockviewReady" />
+    <SceneDockview @ready="handleDockviewReady" />
+    <SceneTaskbar
+      :panels="taskbarPanels"
+      @restore="restoreMinimizedPanel"
+      @remove="removeMinimizedPanel"
+      @toggle-desktop="toggleShowDesktop"
+    />
   </div>
   <!-- 右键菜单（根层级，不受 desktop overflow 影响）-->
   <ContextMenu
@@ -3039,8 +3630,30 @@ async function buildSaveJson(): Promise<void> {
   overscroll-behavior: none;
 }
 
+.scene-background-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.scene-background-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  transform-origin: 0 0;
+  will-change: transform;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 .scene-canvas {
   display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   touch-action: none;
 }
 

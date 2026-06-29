@@ -24,6 +24,7 @@ export class StatusMemory {
   initMode: 'individual' | 'grouped'
   currentInitiativeIdx: number
   initiativeTransparent: boolean
+  initiativeControlsExpanded: boolean
 
   newStatus: Status
 
@@ -34,6 +35,7 @@ export class StatusMemory {
     this.initMode = 'individual'
     this.currentInitiativeIdx = 0
     this.initiativeTransparent = false
+    this.initiativeControlsExpanded = true
     this.newStatus = S_Null.duplicate()
   }
 }
@@ -218,7 +220,7 @@ export interface MapToken {
   color: string
 }
 
-export type MapAssetUsage = 'unused' | 'token' | 'background' | 'both'
+export type MapAssetUsage = 'unused' | 'token' | 'background' | 'both' | 'portrait'
 
 export interface MapAssetBackground {
   cellSize: number
@@ -237,6 +239,10 @@ export interface MapAsset {
   dataUrl: string
   usage: MapAssetUsage
   background: MapAssetBackground
+  naturalWidth?: number
+  naturalHeight?: number
+  tokenForCode?: string
+  portraitForCode?: string
 }
 
 export interface MapFieldData {
@@ -327,7 +333,7 @@ export class MapMemory {
   hpDisplayLevels: Record<string, number> = { 玩家: 2, 友方: 2, 中立: 2, 敌方: 2 }
   collapsedSections: string[] = []
   initiativeBarEnabled: boolean = false
-  renderScale: number = 1
+  renderScale: number = 4
   fogVisible: boolean = true
 }
 

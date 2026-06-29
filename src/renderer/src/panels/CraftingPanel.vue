@@ -5,7 +5,9 @@ import VueNumberInput from '@chenfengyuan/vue-number-input'
 
 const memory = ref<ToolsMemory>(toolsMemory.value)
 
-function craftCoef(level: number): number { return 0.8 + level / 100 }
+function craftCoef(level: number): number {
+  return 0.8 + level / 100
+}
 function armorPower(armorCoef: number): number[] {
   let bonus = Math.floor((armorCoef * 1000 - 1000) * 0.2)
   let a = Math.floor(bonus / 2)
@@ -78,10 +80,19 @@ const armorCustom = computed(() => armorPower(craftCoefVal.value * memory.value.
     </div>
 
     <div class="armor-grid">
-      <div class="panel-result">服装：共 {{ armorClothing[0] }}%，例 {{ armorClothing[1] }}% 物防 / {{ armorClothing[2] }}% 特防</div>
-      <div class="panel-result">轻甲：共 {{ armorLight[0] }}%，例 {{ armorLight[1] }}% 物防 / {{ armorLight[2] }}% 特防</div>
-      <div class="panel-result">中甲：共 {{ armorMedium[0] }}%，例 {{ armorMedium[1] }}% 物防 / {{ armorMedium[2] }}% 特防</div>
-      <div class="panel-result">重甲：共 {{ armorHeavy[0] }}%，例 {{ armorHeavy[1] }}% 物防 / {{ armorHeavy[2] }}% 特防</div>
+      <div class="panel-result">
+        服装：共 {{ armorClothing[0] }}%，例 {{ armorClothing[1] }}% 物防 / {{ armorClothing[2] }}%
+        特防
+      </div>
+      <div class="panel-result">
+        轻甲：共 {{ armorLight[0] }}%，例 {{ armorLight[1] }}% 物防 / {{ armorLight[2] }}% 特防
+      </div>
+      <div class="panel-result">
+        中甲：共 {{ armorMedium[0] }}%，例 {{ armorMedium[1] }}% 物防 / {{ armorMedium[2] }}% 特防
+      </div>
+      <div class="panel-result">
+        重甲：共 {{ armorHeavy[0] }}%，例 {{ armorHeavy[1] }}% 物防 / {{ armorHeavy[2] }}% 特防
+      </div>
     </div>
   </div>
 </template>

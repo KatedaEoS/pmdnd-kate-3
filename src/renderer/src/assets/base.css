@@ -150,10 +150,9 @@ body {
 }
 
 .dv-content-container .dense-table {
-  display: block;
+  display: table;
   width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
+  max-width: none;
   white-space: nowrap;
 }
 
@@ -210,4 +209,8 @@ body {
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
+}
+
+.table-wrap > table {
+  width: 100%;
 }

@@ -11,7 +11,9 @@ interface ConeDrawingLike {
 const EPS = 1e-8
 const DEFAULT_CONE_ANGLE = 53
 
-export function coneTrianglePoints(drawing: ConeDrawingLike): [DrawingPoint, DrawingPoint, DrawingPoint] | null {
+export function coneTrianglePoints(
+  drawing: ConeDrawingLike
+): [DrawingPoint, DrawingPoint, DrawingPoint] | null {
   const [apex, baseCenter] = drawing.points
   if (!apex || !baseCenter) return null
 
@@ -41,14 +43,10 @@ function pointOnSegmentInclusive(
   start: DrawingPoint,
   end: DrawingPoint
 ): boolean {
-  const cross =
-    (point.y - start.y) * (end.x - start.x) -
-    (point.x - start.x) * (end.y - start.y)
+  const cross = (point.y - start.y) * (end.x - start.x) - (point.x - start.x) * (end.y - start.y)
   if (Math.abs(cross) > EPS) return false
 
-  const dot =
-    (point.x - start.x) * (end.x - start.x) +
-    (point.y - start.y) * (end.y - start.y)
+  const dot = (point.x - start.x) * (end.x - start.x) + (point.y - start.y) * (end.y - start.y)
   if (dot < -EPS) return false
 
   const lengthSquared = (end.x - start.x) ** 2 + (end.y - start.y) ** 2
@@ -68,9 +66,7 @@ export function pointInPolygonInclusive(point: DrawingPoint, polygon: DrawingPoi
     const previous = polygon[j]
     if (current.y > point.y !== previous.y > point.y) {
       const x =
-        ((previous.x - current.x) * (point.y - current.y)) /
-          (previous.y - current.y) +
-        current.x
+        ((previous.x - current.x) * (point.y - current.y)) / (previous.y - current.y) + current.x
       if (point.x < x) inside = !inside
     }
   }

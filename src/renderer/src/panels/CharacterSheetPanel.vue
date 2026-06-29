@@ -24,8 +24,23 @@ const creature = computed(() => {
   <div v-if="creature" style="padding: 0.5em; min-width: 220px; background: #fff; color: #333">
     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px">
       <div
-        style="width: 48px; height: 48px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 20px; color: white"
-        :style="{ backgroundColor: { '玩家': '#2196f3', '友方': '#4caf50', '中立': '#ff9800', '敌方': '#e53935' }[creature.faction] ?? '#888' }"
+        style="
+          width: 48px;
+          height: 48px;
+          border-radius: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: bold;
+          font-size: 20px;
+          color: white;
+        "
+        :style="{
+          backgroundColor:
+            { 玩家: '#2196f3', 友方: '#4caf50', 中立: '#ff9800', 敌方: '#e53935' }[
+              creature.faction
+            ] ?? '#888'
+        }"
       >
         {{ creature.name().substring(0, 2) }}
       </div>
@@ -40,12 +55,12 @@ const creature = computed(() => {
       <div>PP: {{ creature.currentPP }} / {{ creature.maxPP() }}</div>
       <div>移动力: {{ creature.currentMov }}</div>
       <div style="margin-top: 4px; color: gray">
-        物攻 {{ creature.getAttackAttributeByName('物攻') }}
-        特攻 {{ creature.getAttackAttributeByName('特攻') }}
+        物攻 {{ creature.getAttackAttributeByName('物攻') }} 特攻
+        {{ creature.getAttackAttributeByName('特攻') }}
       </div>
       <div style="color: gray">
-        物防 {{ creature.getAttackAttributeByName('物防') }}
-        特防 {{ creature.getAttackAttributeByName('特防') }}
+        物防 {{ creature.getAttackAttributeByName('物防') }} 特防
+        {{ creature.getAttackAttributeByName('特防') }}
       </div>
       <div style="color: gray">速度 {{ creature.spd }}</div>
     </div>

@@ -62,8 +62,13 @@ const LUNAR_PHASE_STYLES: Record<string, { color: string; bgColor: string }> = {
 }
 
 const WEEKDAY_BG_COLORS = {
-  星期一: '#eebab7', 星期二: '#eed3b7', 星期三: '#eee1b7',
-  星期四: '#e1e9b7', 星期五: '#a8c7d6', 星期六: '#baa8d6', 星期日: '#d4a8d6'
+  星期一: '#eebab7',
+  星期二: '#eed3b7',
+  星期三: '#eee1b7',
+  星期四: '#e1e9b7',
+  星期五: '#a8c7d6',
+  星期六: '#baa8d6',
+  星期日: '#d4a8d6'
 }
 
 function lastDay(date: string): string {
@@ -74,15 +79,25 @@ const lunarYesterday = computed(() => getLunarPhase(lastDay(memory.value.selecte
 const lunarToday = computed(() => getLunarPhase(memory.value.selectedDate))
 const lunarFuture = computed(() =>
   getLunarPhasesSequence(
-    new Date(new Date(memory.value.selectedDate).setDate(new Date(memory.value.selectedDate).getDate() + 1))
-      .toISOString().split('T')[0], 7
+    new Date(
+      new Date(memory.value.selectedDate).setDate(new Date(memory.value.selectedDate).getDate() + 1)
+    )
+      .toISOString()
+      .split('T')[0],
+    7
   )
 )
 
 function formatLocalDate(dateString: string): string {
   const date = new Date(dateString)
-  return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
-    .replace(/^0+/, '').replaceAll('/0', '/').replace('/', ' 年 ').replace('/', ' 月 ') + ' 日'
+  return (
+    date
+      .toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+      .replace(/^0+/, '')
+      .replaceAll('/0', '/')
+      .replace('/', ' 年 ')
+      .replace('/', ' 月 ') + ' 日'
+  )
 }
 </script>
 
@@ -90,18 +105,32 @@ function formatLocalDate(dateString: string): string {
   <div style="height: 100%; overflow-y: auto; padding: 0.5em">
     <p>选择日期：<input v-model="memory.selectedDate" type="date" /></p>
     <div v-if="memory.selectedDate" class="date-info-container">
-      <div class="date-display"><span class="date-text">{{ formatLocalDate(memory.selectedDate) }}</span></div>
+      <div class="date-display">
+        <span class="date-text">{{ formatLocalDate(memory.selectedDate) }}</span>
+      </div>
       <div class="info-row">
-        <div class="info-box weekday-box" :style="{ backgroundColor: WEEKDAY_BG_COLORS[getWeekday(memory.selectedDate)] }">
+        <div
+          class="info-box weekday-box"
+          :style="{ backgroundColor: WEEKDAY_BG_COLORS[getWeekday(memory.selectedDate)] }"
+        >
           <span class="info-label">星期</span>
           <span class="info-value">{{ getWeekday(memory.selectedDate) }}</span>
         </div>
-        <div class="info-box solar-term-box" :class="{ 'has-term': !!getSolarTerm(memory.selectedDate) }"
-          :style="{ backgroundColor: getSolarTerm(memory.selectedDate) ? '#FFEB3B' : '#F5F5F5' }">
-          <span class="info-label">{{ getSolarTerm(memory.selectedDate) ? '节气' : '下一个节气' }}</span>
+        <div
+          class="info-box solar-term-box"
+          :class="{ 'has-term': !!getSolarTerm(memory.selectedDate) }"
+          :style="{ backgroundColor: getSolarTerm(memory.selectedDate) ? '#FFEB3B' : '#F5F5F5' }"
+        >
+          <span class="info-label">{{
+            getSolarTerm(memory.selectedDate) ? '节气' : '下一个节气'
+          }}</span>
           <span class="info-value">
-            {{ getSolarTerm(memory.selectedDate) || (getNextSolarTerm(memory.selectedDate)
-              ? `${getNextSolarTerm(memory.selectedDate)!.term}（${getNextSolarTerm(memory.selectedDate)!.daysUntil} 天后）` : '无') }}
+            {{
+              getSolarTerm(memory.selectedDate) ||
+              (getNextSolarTerm(memory.selectedDate)
+                ? `${getNextSolarTerm(memory.selectedDate)!.term}（${getNextSolarTerm(memory.selectedDate)!.daysUntil} 天后）`
+                : '无')
+            }}
           </span>
         </div>
       </div>
@@ -109,15 +138,55 @@ function formatLocalDate(dateString: string): string {
     <p v-else style="color: #ff6b6b">请选择一个有效日期</p>
     <div v-if="memory.selectedDate" class="lunar-phase-container">
       <div class="lunar-phase-sequence">
-        <div class="lunar-phase-box" :style="{ backgroundColor: LUNAR_PHASE_STYLES[lunarYesterday.phase].bgColor, color: LUNAR_PHASE_STYLES[lunarYesterday.phase].color }" title="昨日">
-          <span class="lunar-phase-text">{{ lunarYesterday.phase }}<br v-if="lunarYesterday.eventTime" /><span v-if="lunarYesterday.eventTime" class="lunar-phase-time">({{ formatTime(lunarYesterday.eventTime) }})</span></span>
+        <div
+          class="lunar-phase-box"
+          :style="{
+            backgroundColor: LUNAR_PHASE_STYLES[lunarYesterday.phase].bgColor,
+            color: LUNAR_PHASE_STYLES[lunarYesterday.phase].color
+          }"
+          title="昨日"
+        >
+          <span class="lunar-phase-text"
+            >{{ lunarYesterday.phase }}<br v-if="lunarYesterday.eventTime" /><span
+              v-if="lunarYesterday.eventTime"
+              class="lunar-phase-time"
+              >({{ formatTime(lunarYesterday.eventTime) }})</span
+            ></span
+          >
         </div>
-        <div class="lunar-phase-box today" :style="{ backgroundColor: LUNAR_PHASE_STYLES[lunarToday.phase].bgColor, color: LUNAR_PHASE_STYLES[lunarToday.phase].color }" title="今日">
-          <span class="lunar-phase-text">{{ lunarToday.phase }}<br v-if="lunarToday.eventTime" /><span v-if="lunarToday.eventTime" class="lunar-phase-time">({{ formatTime(lunarToday.eventTime) }})</span></span>
+        <div
+          class="lunar-phase-box today"
+          :style="{
+            backgroundColor: LUNAR_PHASE_STYLES[lunarToday.phase].bgColor,
+            color: LUNAR_PHASE_STYLES[lunarToday.phase].color
+          }"
+          title="今日"
+        >
+          <span class="lunar-phase-text"
+            >{{ lunarToday.phase }}<br v-if="lunarToday.eventTime" /><span
+              v-if="lunarToday.eventTime"
+              class="lunar-phase-time"
+              >({{ formatTime(lunarToday.eventTime) }})</span
+            ></span
+          >
         </div>
-        <div v-for="(item, index) in lunarFuture" :key="'future_' + index" class="lunar-phase-box"
-          :style="{ backgroundColor: LUNAR_PHASE_STYLES[item.phase].bgColor, color: LUNAR_PHASE_STYLES[item.phase].color }" :title="`+ ${index + 1} 天`">
-          <span class="lunar-phase-text">{{ item.phase }}<br v-if="item.eventTime" /><span v-if="item.eventTime" class="lunar-phase-time">({{ formatTime(item.eventTime) }})</span></span>
+        <div
+          v-for="(item, index) in lunarFuture"
+          :key="'future_' + index"
+          class="lunar-phase-box"
+          :style="{
+            backgroundColor: LUNAR_PHASE_STYLES[item.phase].bgColor,
+            color: LUNAR_PHASE_STYLES[item.phase].color
+          }"
+          :title="`+ ${index + 1} 天`"
+        >
+          <span class="lunar-phase-text"
+            >{{ item.phase }}<br v-if="item.eventTime" /><span
+              v-if="item.eventTime"
+              class="lunar-phase-time"
+              >({{ formatTime(item.eventTime) }})</span
+            ></span
+          >
         </div>
       </div>
       <p>离线计算的月相可能不精确。</p>
@@ -126,20 +195,111 @@ function formatLocalDate(dateString: string): string {
 </template>
 
 <style scoped>
-.date-info-container { margin-top: 0.5em; }
-.date-display { margin-bottom: 0.5em; }
-.date-text { font-size: 1.5em; font-weight: bold; color: #333; }
-.info-row { display: flex; gap: 1em; justify-content: flex-start; align-items: stretch; }
-.info-box { flex: 1; min-width: 10em; padding: 1em; border-radius: 0.5em; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
-.weekday-box { border: 1px solid #ccc; }
-.solar-term-box.has-term { border: 1px solid #ffc107; }
-.info-label { font-size: 0.9em; color: #666; margin-bottom: 0.2em; }
-.info-value { font-size: 1.2em; font-weight: bold; color: #333; word-break: break-word; padding: 0 0.2em; }
-.lunar-phase-container { margin-top: 1em; }
-.lunar-phase-sequence { display: flex; gap: 1em; justify-content: flex-start; align-items: stretch; flex-wrap: nowrap; overflow-x: auto; padding: 0.3em 0.5em 2em 0.5em; }
-.lunar-phase-box { flex: 1; min-width: 4em; max-width: 8em; height: 3em; border-radius: 0.5em; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 0.9em; font-weight: bold; padding: 0.5em; position: relative; }
-.lunar-phase-box.today { border: 2px solid dodgerblue; transform: scale(1.1); }
-.lunar-phase-text { word-break: break-word; padding: 0 0.2em; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; }
-.lunar-phase-time { font-size: 0.7em; font-weight: normal; color: #ddd; align-self: flex-end; margin-top: auto; }
-.lunar-phase-box::after { content: attr(title); position: absolute; top: calc(100% + 0.3em); left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.8); color: white; padding: 0.2em 0.5em; border-radius: 0.3em; font-size: 0.8em; white-space: nowrap; pointer-events: none; }
+.date-info-container {
+  margin-top: 0.5em;
+}
+.date-display {
+  margin-bottom: 0.5em;
+}
+.date-text {
+  font-size: 1.5em;
+  font-weight: bold;
+  color: #333;
+}
+.info-row {
+  display: flex;
+  gap: 1em;
+  justify-content: flex-start;
+  align-items: stretch;
+}
+.info-box {
+  flex: 1;
+  min-width: 10em;
+  padding: 1em;
+  border-radius: 0.5em;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+.weekday-box {
+  border: 1px solid #ccc;
+}
+.solar-term-box.has-term {
+  border: 1px solid #ffc107;
+}
+.info-label {
+  font-size: 0.9em;
+  color: #666;
+  margin-bottom: 0.2em;
+}
+.info-value {
+  font-size: 1.2em;
+  font-weight: bold;
+  color: #333;
+  word-break: break-word;
+  padding: 0 0.2em;
+}
+.lunar-phase-container {
+  margin-top: 1em;
+}
+.lunar-phase-sequence {
+  display: flex;
+  gap: 1em;
+  justify-content: flex-start;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 0.3em 0.5em 2em 0.5em;
+}
+.lunar-phase-box {
+  flex: 1;
+  min-width: 4em;
+  max-width: 8em;
+  height: 3em;
+  border-radius: 0.5em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 0.9em;
+  font-weight: bold;
+  padding: 0.5em;
+  position: relative;
+}
+.lunar-phase-box.today {
+  border: 2px solid dodgerblue;
+  transform: scale(1.1);
+}
+.lunar-phase-text {
+  word-break: break-word;
+  padding: 0 0.2em;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+}
+.lunar-phase-time {
+  font-size: 0.7em;
+  font-weight: normal;
+  color: #ddd;
+  align-self: flex-end;
+  margin-top: auto;
+}
+.lunar-phase-box::after {
+  content: attr(title);
+  position: absolute;
+  top: calc(100% + 0.3em);
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 0.2em 0.5em;
+  border-radius: 0.3em;
+  font-size: 0.8em;
+  white-space: nowrap;
+  pointer-events: none;
+}
 </style>

@@ -22,6 +22,7 @@ const emit = defineEmits<{
   'draw-color-change': [value: string]
   'snap-enabled-change': [value: boolean]
   'move-cost-mode-change': [value: boolean]
+  'render-scale-change': [value: number]
   'enter-draw-mode': [mode: DrawMode]
   'toggle-fog-visible': []
   'set-hp-display-level': [faction: string, level: number]
@@ -33,6 +34,10 @@ function emitColor(event: Event): void {
 
 function emitHPDisplayLevel(faction: string, event: Event): void {
   emit('set-hp-display-level', faction, Number((event.target as HTMLSelectElement).value))
+}
+
+function emitRenderScale(event: Event): void {
+  emit('render-scale-change', Number((event.target as HTMLSelectElement).value))
 }
 </script>
 
@@ -97,6 +102,17 @@ function emitHPDisplayLevel(faction: string, event: Event): void {
           <option :value="3">PP值</option>
         </select>
       </div>
+    </div>
+    <div class="tool-section">
+      <div class="tool-label">缩放</div>
+      <select
+        :value="mm.renderScale"
+        class="render-scale-select"
+        title="画布渲染倍率；较低倍率可提升低速 Canvas 环境下的性能"
+        @change="emitRenderScale"
+      >
+        <option v-for="scale in 8" :key="scale" :value="scale">{{ scale }}x</option>
+      </select>
     </div>
   </div>
 </template>
@@ -185,6 +201,10 @@ function emitHPDisplayLevel(faction: string, event: Event): void {
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 4px;
   text-align: center;
+}
+
+.render-scale-select {
+  font-weight: 650;
 }
 
 @media (pointer: coarse) and (orientation: landscape) {

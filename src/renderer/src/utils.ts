@@ -58,7 +58,12 @@ export function drawCanvasLabel(
   rs: number,
   vx: number,
   vy: number,
-  options?: { fontSize?: number; align?: 'center' | 'left' | 'right'; bold?: boolean; warn?: boolean }
+  options?: {
+    fontSize?: number
+    align?: 'center' | 'left' | 'right'
+    bold?: boolean
+    warn?: boolean
+  }
 ): void {
   const fontSize = (options?.fontSize ?? 14) * rs
   const align = options?.align ?? 'center'

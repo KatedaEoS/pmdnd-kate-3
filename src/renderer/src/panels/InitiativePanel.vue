@@ -9,7 +9,12 @@ const memory = ref<StatusMemory>(statusMemory.value)
 const mm = mapMemory.value
 const requestSceneDraw = inject<() => void>('requestSceneDraw', () => {})
 const activeCodes = ref<Set<string>>(new Set())
-const controlsExpanded = ref(true)
+const controlsExpanded = computed({
+  get: () => memory.value.initiativeControlsExpanded,
+  set: (value: boolean) => {
+    memory.value.initiativeControlsExpanded = value
+  }
+})
 const panelRef = ref<HTMLElement | null>(null)
 const cardsRef = ref<HTMLElement | null>(null)
 const panelHeight = ref(0)
@@ -103,8 +108,7 @@ function observeCards(el: HTMLElement | null): void {
 
 const measuredCardAreaHeight = computed(() => {
   if (cardAreaHeight.value > 0) return cardAreaHeight.value
-  const controlsHeight = controlsExpanded.value ? 44 : 18
-  return Math.max(40, panelHeight.value - controlsHeight)
+  return Math.max(40, panelHeight.value)
 })
 
 const densityClass = computed(() => {
@@ -255,47 +259,6 @@ function getTokenImg(code: string, name: string): string | null {
     :class="[densityClass, { 'initiative-panel--transparent': memory.initiativeTransparent }]"
     :style="layoutVars"
   >
-    <div class="init-control-shell">
-      <button
-        class="init-toggle"
-        :title="controlsExpanded ? '收起控制行' : '展开控制行'"
-        @click="controlsExpanded = !controlsExpanded"
-      >
-        {{ controlsExpanded ? '⌃' : '⌄' }}
-      </button>
-      <div v-if="controlsExpanded" class="init-controls">
-        <button
-          class="w3-button w3-tiny"
-          :class="{ 'w3-black': memory.initMode === 'individual' }"
-          @click="memory.initMode = 'individual'"
-        >
-          分别
-        </button>
-        <button
-          class="w3-button w3-tiny"
-          :class="{ 'w3-black': memory.initMode === 'grouped' }"
-          @click="memory.initMode = 'grouped'"
-        >
-          合并
-        </button>
-        <span class="init-control-spacer"></span>
-        <button class="w3-button w3-tiny" @click="prevTurn">←</button>
-        <span class="init-turn-info"
-          >{{ memory.currentInitiativeIdx + 1 }} / {{ initiativeList.length }}</span
-        >
-        <button class="w3-button w3-tiny" @click="nextTurn">→</button>
-        <span class="init-control-spacer"></span>
-        <button
-          class="w3-button w3-tiny"
-          :class="{ 'w3-black': memory.initiativeTransparent }"
-          @click="memory.initiativeTransparent = !memory.initiativeTransparent"
-        >
-          透明
-        </button>
-        <button class="w3-button w3-tiny" @click="newRound">新一轮</button>
-      </div>
-    </div>
-
     <div v-if="initiativeList.length > 0" ref="cardsRef" class="init-cards">
       <div class="init-card-track">
         <div
@@ -325,7 +288,54 @@ function getTokenImg(code: string, name: string): string | null {
       </div>
     </div>
 
-    <div v-else style="color: #999; padding: 2em 0; text-align: center">暂无角色</div>
+    <div v-else class="init-empty">暂无角色</div>
+
+    <div class="init-control-shell">
+      <button
+        class="init-toggle"
+        :title="controlsExpanded ? '收起控制菜单' : '展开控制菜单'"
+        @click="controlsExpanded = !controlsExpanded"
+      >
+        {{ controlsExpanded ? '收起' : '菜单' }}
+      </button>
+      <span class="init-turn-info"
+        ><span class="init-turn-current">{{ memory.currentInitiativeIdx + 1 }}</span
+        ><span class="init-turn-total">/ {{ initiativeList.length }}</span></span
+      >
+      <div class="init-rail-nav">
+        <button class="init-rail-button" title="上一位" @click="prevTurn"><</button>
+        <button class="init-rail-button" title="下一位" @click="nextTurn">></button>
+      </div>
+    </div>
+
+    <div v-if="controlsExpanded" class="init-controls">
+      <div class="init-control-group">
+        <button
+          class="w3-button w3-tiny"
+          :class="{ 'w3-black': memory.initMode === 'individual' }"
+          @click="memory.initMode = 'individual'"
+        >
+          分别
+        </button>
+        <button
+          class="w3-button w3-tiny"
+          :class="{ 'w3-black': memory.initMode === 'grouped' }"
+          @click="memory.initMode = 'grouped'"
+        >
+          合并
+        </button>
+      </div>
+      <div class="init-control-group">
+        <button
+          class="w3-button w3-tiny"
+          :class="{ 'w3-black': memory.initiativeTransparent }"
+          @click="memory.initiativeTransparent = !memory.initiativeTransparent"
+        >
+          透明
+        </button>
+        <button class="w3-button w3-tiny" @click="newRound">新一轮</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -335,6 +345,7 @@ function getTokenImg(code: string, name: string): string | null {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
   overflow: hidden;
   font-size: 12px;
   background: #fff;
@@ -352,8 +363,17 @@ function getTokenImg(code: string, name: string): string | null {
   background: transparent;
 }
 .init-control-shell {
-  flex-shrink: 0;
-  border-bottom: 1px solid #e0e0e0;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  width: 52px;
+  flex-direction: column;
+  align-items: stretch;
+  border-left: 1px solid #e0e0e0;
+  background: #f5f5f5;
 }
 .initiative-panel--transparent .init-control-shell {
   background: rgba(255, 255, 255, 0.55);
@@ -361,12 +381,16 @@ function getTokenImg(code: string, name: string): string | null {
 }
 .init-toggle {
   width: 100%;
-  height: 16px;
+  height: 28px;
+  flex: 0 0 28px;
   border: 0;
-  background: #f5f5f5;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: transparent;
   color: #666;
+  font-size: 12px;
+  font-weight: 650;
   cursor: pointer;
-  line-height: 14px;
+  line-height: 1;
 }
 .initiative-panel--transparent .init-toggle {
   background: rgba(255, 255, 255, 0.45);
@@ -375,36 +399,101 @@ function getTokenImg(code: string, name: string): string | null {
   background: #e8f0fe;
   color: #222;
 }
+.init-rail-nav {
+  display: grid;
+  flex: 0 0 30px;
+  height: 30px;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+.init-rail-button {
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #333;
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+}
+.init-rail-button + .init-rail-button {
+  border-left: 1px solid rgba(0, 0, 0, 0.08);
+}
+.init-rail-button:hover {
+  background: #e8f0fe;
+}
 .init-controls {
+  position: absolute;
+  top: 4px;
+  right: 58px;
+  z-index: 7;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
-  padding: 3px 8px;
+  max-width: calc(100% - 48px);
+  padding: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+}
+.initiative-panel--transparent .init-controls {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(3px);
+}
+.init-control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .init-controls .w3-button {
   padding: 3px 8px;
   line-height: 1.2;
   white-space: nowrap;
 }
-.init-control-spacer {
-  flex: 1 1 12px;
-  min-width: 8px;
-}
 .init-turn-info {
-  font-size: 11px;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 3px 0;
   color: #666;
-  min-width: 3em;
   text-align: center;
+  white-space: nowrap;
+}
+.init-turn-current {
+  color: #222;
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1;
+}
+.init-turn-total {
+  font-size: 10px;
+  line-height: 1;
 }
 .init-cards {
   flex: 1;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   display: flex;
   align-items: center;
-  padding: 4px 8px;
+  padding: 4px 60px 4px 8px;
   min-height: 0;
+}
+.init-empty {
+  display: grid;
+  height: 100%;
+  padding-right: 52px;
+  place-items: center;
+  color: #999;
 }
 .init-card-track {
   display: flex;
@@ -497,13 +586,36 @@ function getTokenImg(code: string, name: string): string | null {
 }
 
 .initiative-panel--tiny .init-toggle {
-  height: 12px;
-  line-height: 10px;
+  height: 100%;
+  flex: 0 0 38px;
+  border-right: 1px solid rgba(0, 0, 0, 0.08);
+  border-bottom: 0;
+  font-size: 11px;
+}
+
+.initiative-panel--tiny .init-control-shell {
+  top: 2px;
+  right: 2px;
+  bottom: auto;
+  width: 136px;
+  height: 26px;
+  flex-direction: row;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
 }
 
 .initiative-panel--tiny .init-controls {
   gap: 2px;
-  padding: 2px 6px;
+  top: 30px;
+  right: 2px;
+  max-width: calc(100% - 4px);
+  padding: 2px;
+}
+
+.initiative-panel--tiny .init-control-group {
+  gap: 2px;
 }
 
 .initiative-panel--tiny .init-controls .w3-button {
@@ -512,8 +624,31 @@ function getTokenImg(code: string, name: string): string | null {
 }
 
 .initiative-panel--tiny .init-turn-info {
+  flex: 1 1 auto;
+  flex-direction: row;
+  gap: 1px;
+  min-width: 0;
+  padding: 0 4px;
   font-size: 10px;
-  min-width: 2.8em;
+}
+
+.initiative-panel--tiny .init-turn-current {
+  font-size: 12px;
+}
+
+.initiative-panel--tiny .init-turn-total {
+  font-size: 10px;
+}
+
+.initiative-panel--tiny .init-rail-nav {
+  flex: 0 0 44px;
+  height: 100%;
+  border-top: 0;
+  border-left: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.initiative-panel--tiny .init-rail-button {
+  font-size: 12px;
 }
 
 .initiative-panel--tiny .init-cards {

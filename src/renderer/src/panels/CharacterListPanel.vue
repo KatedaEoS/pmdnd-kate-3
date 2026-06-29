@@ -3,7 +3,12 @@ import { ref, computed, inject } from 'vue'
 import Creatures, { Creature } from '../model/Creature'
 import { showHP as formatHP } from '../model/Damage'
 
-const openPanel = inject('openPanel') as (component: string, id: string, title: string, params?: Record<string, unknown>) => void
+const openPanel = inject('openPanel') as (
+  component: string,
+  id: string,
+  title: string,
+  params?: Record<string, unknown>
+) => void
 const centerOnToken = inject('centerOnToken') as (code: string) => void
 
 const creatures = ref<Creature[]>(Creatures.value)
@@ -65,29 +70,49 @@ function openCharacter(code: string): void {
 </script>
 
 <template>
-  <div style="height: 100%; min-width: 260px; min-height: 200px; display: flex; flex-direction: column; font-size: 13px; overflow: hidden">
-    <div style="padding: 6px 8px; border-bottom: 1px solid #eee; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; flex-shrink: 0">
-      <label style="font-size:11px;color:#666">
+  <div
+    style="
+      height: 100%;
+      min-width: 260px;
+      min-height: 200px;
+      display: flex;
+      flex-direction: column;
+      font-size: 13px;
+      overflow: hidden;
+    "
+  >
+    <div
+      style="
+        padding: 6px 8px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        align-items: center;
+        flex-shrink: 0;
+      "
+    >
+      <label style="font-size: 11px; color: #666">
         <input type="checkbox" v-model="showCode" /> 代号
       </label>
-      <label style="font-size:11px;color:#666">
+      <label style="font-size: 11px; color: #666">
         <input type="checkbox" v-model="showHP" /> HP
       </label>
-      <label style="font-size:11px;color:#666">
+      <label style="font-size: 11px; color: #666">
         <input type="checkbox" v-model="showPP" /> PP
       </label>
-      <label style="font-size:11px;color:#666">
+      <label style="font-size: 11px; color: #666">
         <input type="checkbox" v-model="showInitiative" /> 先攻
       </label>
-      <span style="font-size:11px;color:#666">排序</span>
-      <select v-model="sortBy" style="font-size:11px;width:auto;padding:1px">
+      <span style="font-size: 11px; color: #666">排序</span>
+      <select v-model="sortBy" style="font-size: 11px; width: auto; padding: 1px">
         <option value="name">名字</option>
         <option value="code">代号</option>
         <option value="initiative">先攻</option>
         <option value="faction">阵营</option>
       </select>
-      <span style="font-size:11px;color:#666">筛选</span>
-      <select v-model="filterFaction" style="font-size:11px;width:auto;padding:1px">
+      <span style="font-size: 11px; color: #666">筛选</span>
+      <select v-model="filterFaction" style="font-size: 11px; width: auto; padding: 1px">
         <option value="全部">全部</option>
         <option value="玩家">玩家</option>
         <option value="友方">友方</option>
@@ -116,14 +141,18 @@ function openCharacter(code: string): void {
             opacity: 0.5
           }"
         />
-        <div style="position: relative; padding: 3px 8px; display: flex; align-items: center; gap: 6px">
+        <div
+          style="position: relative; padding: 3px 8px; display: flex; align-items: center; gap: 6px"
+        >
           <span
             :style="{
               display: 'inline-block',
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: { '玩家': '#2196f3', '友方': '#4caf50', '中立': '#f9a825', '敌方': '#e53935' }[c.faction] ?? '#888'
+              backgroundColor:
+                { 玩家: '#2196f3', 友方: '#4caf50', 中立: '#f9a825', 敌方: '#e53935' }[c.faction] ??
+                '#888'
             }"
           />
           <span style="font-weight: 500">{{ c.name() }}</span>
@@ -132,14 +161,34 @@ function openCharacter(code: string): void {
             {{ c.initiative() + c.tempInitiative }}
           </span>
           <span style="flex: 1" />
-          <span v-if="showHP" :style="{ fontSize: '11px', color: hpTextColor(c), fontWeight: '600', marginRight: showPP ? '0' : '0' }">
+          <span
+            v-if="showHP"
+            :style="{
+              fontSize: '11px',
+              color: hpTextColor(c),
+              fontWeight: '600',
+              marginRight: showPP ? '0' : '0'
+            }"
+          >
             {{ formatHP([c.currentHP, c.tempHP]) }}/{{ c.maxHP() }}
           </span>
-          <span v-if="showPP" style="font-size: 11px; color: steelblue; min-width: 36px; text-align: right">{{ c.currentPP }}</span>
+          <span
+            v-if="showPP"
+            style="font-size: 11px; color: steelblue; min-width: 36px; text-align: right"
+            >{{ c.currentPP }}</span
+          >
         </div>
       </div>
     </div>
-    <div style="padding: 4px 8px; font-size: 11px; color: #999; border-top: 1px solid #eee; flex-shrink: 0">
+    <div
+      style="
+        padding: 4px 8px;
+        font-size: 11px;
+        color: #999;
+        border-top: 1px solid #eee;
+        flex-shrink: 0;
+      "
+    >
       共 {{ creatures.length }} 个角色
     </div>
   </div>
@@ -147,6 +196,6 @@ function openCharacter(code: string): void {
 
 <style scoped>
 .creature-row:hover {
-  background: rgba(0,0,0,0.03);
+  background: rgba(0, 0, 0, 0.03);
 }
 </style>

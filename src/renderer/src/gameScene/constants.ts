@@ -80,7 +80,7 @@ export interface PanelSizePreset {
 
 export const panelSizePresets: Record<string, PanelSizePreset> = {
   CharacterListPanel: { width: 380, height: 560, minWidth: 300, minHeight: 300 },
-  CharacterFullPanel: { width: 760, height: 680, minWidth: 520, minHeight: 420 },
+  CharacterFullPanel: { width: 600, height: 680, minWidth: 600, minHeight: 420 },
   CharacterSheetPanel: { width: 300, height: 280, minWidth: 240, minHeight: 180 },
   BattlePanel: { width: 920, height: 680, minWidth: 520, minHeight: 420 },
   MovePanel: { width: 920, height: 680, minWidth: 520, minHeight: 420 },

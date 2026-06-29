@@ -20,8 +20,10 @@ import AssetManagerPanel from '../panels/AssetManagerPanel.vue'
 import BackgroundSettingsPanel from '../panels/BackgroundSettingsPanel.vue'
 import AboutPanel from '../panels/AboutPanel.vue'
 import FieldEditPanel from '../panels/FieldEditPanel.vue'
+import DockviewWindowActions from './DockviewWindowActions.vue'
 
 const emit = defineEmits<{ ready: [event: DockviewReadyEvent] }>()
+const dockviewWindowActions = DockviewWindowActions as any
 
 const dockviewComponents = {
   CharacterSheetPanel,
@@ -52,6 +54,7 @@ const dockviewComponents = {
       class="dockview-instance dockview-theme-light"
       :components="dockviewComponents as any"
       :theme="themeLight"
+      :right-header-actions-component="dockviewWindowActions"
       dndStrategy="pointer"
       floatingGroupBounds="boundedWithinViewport"
       @ready="emit('ready', $event)"
@@ -62,7 +65,10 @@ const dockviewComponents = {
 <style scoped>
 .dockview-overlay {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 42px;
+  left: 0;
   z-index: 20;
   pointer-events: none;
 }
@@ -154,6 +160,10 @@ const dockviewComponents = {
 }
 
 @media (pointer: coarse) and (orientation: landscape) {
+  .dockview-overlay {
+    bottom: 48px;
+  }
+
   .dockview-overlay :deep(.dv-resize-container),
   .dockview-overlay :deep(.dv-tabs-and-actions-container),
   .dockview-overlay :deep(.dv-tab) {

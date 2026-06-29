@@ -147,7 +147,8 @@ export function drawShapeHighlight(
     }
   } else if (d.type == 'polygon' && d.points.length >= 3) {
     ctx.moveTo(ox + d.points[0].x * cs, oy + d.points[0].y * cs)
-    for (let i = 1; i < d.points.length; i++) ctx.lineTo(ox + d.points[i].x * cs, oy + d.points[i].y * cs)
+    for (let i = 1; i < d.points.length; i++)
+      ctx.lineTo(ox + d.points[i].x * cs, oy + d.points[i].y * cs)
     ctx.closePath()
   } else if (d.points.length >= 2) {
     ctx.moveTo(ox + d.points[0].x * cs, oy + d.points[0].y * cs)

@@ -382,11 +382,9 @@ function ensureTargetData(): void {
   targets.value = targets.value.filter((t) => chosen.has(t.code))
 }
 
-watch(
-  () => Array.from(surviveMemory.value.chosen).sort().join('\u0000'),
-  ensureTargetData,
-  { immediate: true }
-)
+watch(() => Array.from(surviveMemory.value.chosen).sort().join('\u0000'), ensureTargetData, {
+  immediate: true
+})
 watch(() => Creatures.value.length, ensureTargetData)
 watch(atkType, ensureTargetData)
 
@@ -649,7 +647,9 @@ function computeStatusResult(entry: TargetEntry): StatusResult {
   )
   const baseMdf = creature.typeMdf(ms.damageType) + creature.typeMdf(ms.damageAspect)
   const mdf =
-    baseMdf + envTypeMdfTotal([ms.damageType, ms.damageAspect], memory.value.attacker) + entry.damageMdfD
+    baseMdf +
+    envTypeMdfTotal([ms.damageType, ms.damageAspect], memory.value.attacker) +
+    entry.damageMdfD
   const healMdfVal = ms.damageMdfD + entry.damageMdfD
 
   return {
@@ -826,10 +826,14 @@ function applyAttack(entry: TargetEntry): void {
 function applyCasterCost(): void {
   const atk = memory.value.attacker
   if (!atk) return
-  const cost = atkType.value == 3 ? memoryStatus.value.costPP
-    : atkType.value == 2 ? memoryHeal.value.costPP
-    : atkType.value == 0 ? movem.value.nullCostPP
-    : memory.value.costPP
+  const cost =
+    atkType.value == 3
+      ? memoryStatus.value.costPP
+      : atkType.value == 2
+        ? memoryHeal.value.costPP
+        : atkType.value == 0
+          ? movem.value.nullCostPP
+          : memory.value.costPP
   if (cost > 0) atk.currentPP = Math.max(0, atk.currentPP - cost)
 }
 
@@ -935,47 +939,73 @@ onUpdated(() => {
 <template>
   <div class="multi-target-panel panel-page">
     <div class="w3-container w3-border w3-round" style="padding: 0.5em; margin-bottom: 0.75em">
-      <div style="display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; justify-content: space-between">
-        <div v-if="casterExpanded" style="display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center">
-        <span>施法者</span>
-        <select
-          :value="memory.attacker?.code() ?? ''"
-          class="w3-select w3-border"
-          style="width: 14em"
-          @change="chooseCaster(($event.target as HTMLSelectElement).value)"
+      <div
+        style="
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5em;
+          align-items: center;
+          justify-content: space-between;
+        "
+      >
+        <div
+          v-if="casterExpanded"
+          style="display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center"
         >
-          <option value="">未选择</option>
-          <option v-for="c in Creatures" :key="c.code()" :value="c.code()">
-            {{ c.name() }} {{ c.code() }}
-          </option>
-        </select>
-
-        <template v-if="memory.attacker != null">
-          <span>要使用招式</span>
-          <input
-            v-model="movem.selectedMove"
-            class="w3-input"
-            style="width: 10em"
-            list="spell-suggestions"
-            @change="setCurrentMove()"
-          />
-          <datalist id="spell-suggestions">
-            <option v-for="name in casterMoveList" :key="name" :value="name"></option>
-          </datalist>
+          <span>施法者</span>
           <select
-            v-model="movem.selectedMove"
+            :value="memory.attacker?.code() ?? ''"
             class="w3-select w3-border"
-            style="width: 10em"
-            @change="setCurrentMove()"
-            @wheel="moveWheel"
+            style="width: 14em"
+            @change="chooseCaster(($event.target as HTMLSelectElement).value)"
           >
-            <option v-for="name in casterMoveList" :key="name" :value="name">
-              {{ name }}
+            <option value="">未选择</option>
+            <option v-for="c in Creatures" :key="c.code()" :value="c.code()">
+              {{ c.name() }} {{ c.code() }}
             </option>
           </select>
-        </template>
+
+          <template v-if="memory.attacker != null">
+            <span>要使用招式</span>
+            <input
+              v-model="movem.selectedMove"
+              class="w3-input"
+              style="width: 10em"
+              list="spell-suggestions"
+              @change="setCurrentMove()"
+            />
+            <datalist id="spell-suggestions">
+              <option v-for="name in casterMoveList" :key="name" :value="name"></option>
+            </datalist>
+            <select
+              v-model="movem.selectedMove"
+              class="w3-select w3-border"
+              style="width: 10em"
+              @change="setCurrentMove()"
+              @wheel="moveWheel"
+            >
+              <option v-for="name in casterMoveList" :key="name" :value="name">
+                {{ name }}
+              </option>
+            </select>
+          </template>
         </div>
-        <p v-if="!casterExpanded && memory.attacker != null && currentMove().name.length > 0 && !isNoPower()" style="margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
+        <p
+          v-if="
+            !casterExpanded &&
+            memory.attacker != null &&
+            currentMove().name.length > 0 &&
+            !isNoPower()
+          "
+          style="
+            margin: 0;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          "
+        >
           <span v-if="atkType == 1">攻击方：</span>
           <span v-else>施法者：</span>
           <span style="font-weight: bold">{{ memory.attacker!.name() }}</span>
@@ -1080,167 +1110,179 @@ onUpdated(() => {
           </span>
         </div>
 
-      <div
-        v-if="currentMove().name.length > 0 && currentMove().powerList.length > 0"
-        style="margin-top: 0.5em"
-      >
-        <div style="display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center">
-          <span>选择威力</span>
-          <select
-            v-model="movem.selectedPowerIdx"
-            class="w3-select w3-border"
-            style="width: 28em"
-            @change="setCurrentMove()"
-            @wheel="movePowerWheel"
-          >
-            <option v-for="pwr in currentMove().powerList" :key="pwr.idx" :value="pwr.idx">
-              {{ pwr.message() }}
-            </option>
-          </select>
-          <span>DC {{ currentDC() - movem.dcDelta }} +</span>
-          <vue-number-input v-model="movem.dcDelta" size="small" inline center controls :step="1" />
-        </div>
-
         <div
-          style="display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; margin-top: 0.5em"
+          v-if="currentMove().name.length > 0 && currentMove().powerList.length > 0"
+          style="margin-top: 0.5em"
         >
-          <template v-if="atkType == 1">
-            <span
-              >攻击等级 {{ battleLv() }} | {{ memory.spellType }} 属性一致
-              {{ spellTypeStab() }}</span
+          <div style="display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center">
+            <span>选择威力</span>
+            <select
+              v-model="movem.selectedPowerIdx"
+              class="w3-select w3-border"
+              style="width: 28em"
+              @change="setCurrentMove()"
+              @wheel="movePowerWheel"
             >
-            <button
-              class="w3-button"
-              :class="{ 'w3-black': !memory.enableCT }"
-              @click="memory.enableCT = memory.enableCT ? 0 : 1"
-            >
-              {{ memory.enableCT ? '启用暴击' : '禁用暴击' }}
-            </button>
+              <option v-for="pwr in currentMove().powerList" :key="pwr.idx" :value="pwr.idx">
+                {{ pwr.message() }}
+              </option>
+            </select>
+            <span>DC {{ currentDC() - movem.dcDelta }} +</span>
             <vue-number-input
-              v-model="memory.ctLimit"
+              v-model="movem.dcDelta"
               size="small"
               inline
               center
               controls
               :step="1"
-              :min="1"
-              :max="20"
             />
-            <button
-              class="w3-button"
-              :class="{ 'w3-black': !memory.enableMiss }"
-              @click="memory.enableMiss = memory.enableMiss ? 0 : 1"
-            >
-              {{ memory.enableMiss ? '启用大失败' : '禁用大失败' }}
-            </button>
-            <button
-              class="w3-button"
-              :class="{ 'w3-black': !memory.enableAccuracyAdvance }"
-              @click="memory.enableAccuracyAdvance = memory.enableAccuracyAdvance ? 0 : 1"
-            >
-              {{ memory.enableAccuracyAdvance ? '命中减值有效' : '命中减值无效' }}
-            </button>
-          </template>
-          <template v-if="atkType == 2">
-            <span>{{ memoryHeal.spellType }} 属性一致 {{ spellTypeStabHeal() }}</span>
-            <button
-              class="w3-button"
-              :class="{ 'w3-black': !memoryHeal.enableCT }"
-              @click="memoryHeal.enableCT = memoryHeal.enableCT ? 0 : 1"
-            >
-              {{ memoryHeal.enableCT ? '启用暴击' : '禁用暴击' }}
-            </button>
-            <vue-number-input
-              v-model="memoryHeal.ctLimit"
-              size="small"
-              inline
-              center
-              controls
-              :step="1"
-              :min="1"
-              :max="20"
-            />
-            <button
-              class="w3-button"
-              :class="{ 'w3-black': !memoryHeal.enableMiss }"
-              @click="memoryHeal.enableMiss = memoryHeal.enableMiss ? 0 : 1"
-            >
-              {{ memoryHeal.enableMiss ? '启用大失败' : '禁用大失败' }}
-            </button>
-          </template>
-          <template v-if="atkType == 3">
-            <span>状态等级 {{ battleLvStatus() }}</span>
-            <button
-              class="w3-button"
-              :class="{ 'w3-black': !memoryStatus.enableCT }"
-              @click="memoryStatus.enableCT = memoryStatus.enableCT ? 0 : 1"
-            >
-              {{ memoryStatus.enableCT ? '启用暴击' : '禁用暴击' }}
-            </button>
-            <vue-number-input
-              v-model="memoryStatus.ctLimit"
-              size="small"
-              inline
-              center
-              controls
-              :step="1"
-              :min="1"
-              :max="20"
-            />
-            <button
-              class="w3-button"
-              :class="{ 'w3-black': !memoryStatus.enableMiss }"
-              @click="memoryStatus.enableMiss = memoryStatus.enableMiss ? 0 : 1"
-            >
-              {{ memoryStatus.enableMiss ? '启用大失败' : '禁用大失败' }}
-            </button>
-          </template>
-        </div>
+          </div>
 
-        <div
-          style="
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.25em;
-            align-items: center;
-            margin-top: 0.5em;
-          "
-        >
-          <span>豁免</span>
-          <button
-            v-for="skill in ['力量', '敏捷', '体质', '智力', '感知', '魅力']"
-            :key="skill"
-            class="w3-button w3-light-gray"
-            @click="setSaveForTargets(skill)"
-          >
-            {{ skill }} {{ currentDC() }}
-          </button>
-        </div>
-
-        <div style="margin-top: 0.5em">
-          <button
-            class="w3-button w3-light-gray"
-            @click="showMoveDescription = !showMoveDescription"
-          >
-            {{ showMoveDescription ? '收起招式描述' : '展开招式描述' }}
-          </button>
-          <textarea
-            v-if="showMoveDescription"
-            v-model="currentMove().description"
-            data-autosize
-            spellcheck="false"
+          <div
             style="
-              width: 100%;
-              min-height: 10em;
-              resize: vertical;
-              box-sizing: border-box;
+              display: flex;
+              flex-wrap: wrap;
+              gap: 0.5em;
+              align-items: center;
               margin-top: 0.5em;
             "
-          ></textarea>
+          >
+            <template v-if="atkType == 1">
+              <span
+                >攻击等级 {{ battleLv() }} | {{ memory.spellType }} 属性一致
+                {{ spellTypeStab() }}</span
+              >
+              <button
+                class="w3-button"
+                :class="{ 'w3-black': !memory.enableCT }"
+                @click="memory.enableCT = memory.enableCT ? 0 : 1"
+              >
+                {{ memory.enableCT ? '启用暴击' : '禁用暴击' }}
+              </button>
+              <vue-number-input
+                v-model="memory.ctLimit"
+                size="small"
+                inline
+                center
+                controls
+                :step="1"
+                :min="1"
+                :max="20"
+              />
+              <button
+                class="w3-button"
+                :class="{ 'w3-black': !memory.enableMiss }"
+                @click="memory.enableMiss = memory.enableMiss ? 0 : 1"
+              >
+                {{ memory.enableMiss ? '启用大失败' : '禁用大失败' }}
+              </button>
+              <button
+                class="w3-button"
+                :class="{ 'w3-black': !memory.enableAccuracyAdvance }"
+                @click="memory.enableAccuracyAdvance = memory.enableAccuracyAdvance ? 0 : 1"
+              >
+                {{ memory.enableAccuracyAdvance ? '命中减值有效' : '命中减值无效' }}
+              </button>
+            </template>
+            <template v-if="atkType == 2">
+              <span>{{ memoryHeal.spellType }} 属性一致 {{ spellTypeStabHeal() }}</span>
+              <button
+                class="w3-button"
+                :class="{ 'w3-black': !memoryHeal.enableCT }"
+                @click="memoryHeal.enableCT = memoryHeal.enableCT ? 0 : 1"
+              >
+                {{ memoryHeal.enableCT ? '启用暴击' : '禁用暴击' }}
+              </button>
+              <vue-number-input
+                v-model="memoryHeal.ctLimit"
+                size="small"
+                inline
+                center
+                controls
+                :step="1"
+                :min="1"
+                :max="20"
+              />
+              <button
+                class="w3-button"
+                :class="{ 'w3-black': !memoryHeal.enableMiss }"
+                @click="memoryHeal.enableMiss = memoryHeal.enableMiss ? 0 : 1"
+              >
+                {{ memoryHeal.enableMiss ? '启用大失败' : '禁用大失败' }}
+              </button>
+            </template>
+            <template v-if="atkType == 3">
+              <span>状态等级 {{ battleLvStatus() }}</span>
+              <button
+                class="w3-button"
+                :class="{ 'w3-black': !memoryStatus.enableCT }"
+                @click="memoryStatus.enableCT = memoryStatus.enableCT ? 0 : 1"
+              >
+                {{ memoryStatus.enableCT ? '启用暴击' : '禁用暴击' }}
+              </button>
+              <vue-number-input
+                v-model="memoryStatus.ctLimit"
+                size="small"
+                inline
+                center
+                controls
+                :step="1"
+                :min="1"
+                :max="20"
+              />
+              <button
+                class="w3-button"
+                :class="{ 'w3-black': !memoryStatus.enableMiss }"
+                @click="memoryStatus.enableMiss = memoryStatus.enableMiss ? 0 : 1"
+              >
+                {{ memoryStatus.enableMiss ? '启用大失败' : '禁用大失败' }}
+              </button>
+            </template>
+          </div>
+
+          <div
+            style="
+              display: flex;
+              flex-wrap: wrap;
+              gap: 0.25em;
+              align-items: center;
+              margin-top: 0.5em;
+            "
+          >
+            <span>豁免</span>
+            <button
+              v-for="skill in ['力量', '敏捷', '体质', '智力', '感知', '魅力']"
+              :key="skill"
+              class="w3-button w3-light-gray"
+              @click="setSaveForTargets(skill)"
+            >
+              {{ skill }} {{ currentDC() }}
+            </button>
+          </div>
+
+          <div style="margin-top: 0.5em">
+            <button
+              class="w3-button w3-light-gray"
+              @click="showMoveDescription = !showMoveDescription"
+            >
+              {{ showMoveDescription ? '收起招式描述' : '展开招式描述' }}
+            </button>
+            <textarea
+              v-if="showMoveDescription"
+              v-model="currentMove().description"
+              data-autosize
+              spellcheck="false"
+              style="
+                width: 100%;
+                min-height: 10em;
+                resize: vertical;
+                box-sizing: border-box;
+                margin-top: 0.5em;
+              "
+            ></textarea>
+          </div>
         </div>
       </div>
-      </div>
-
     </div>
 
     <div v-if="memory.attacker != null && currentMove().name.length > 0">
@@ -1646,12 +1688,7 @@ onUpdated(() => {
     </div>
 
     <div v-if="isNoPower() || targets.length == 0" style="margin-top: 0.5em">
-      <button
-        class="w3-button w3-red"
-        @click="applyAllAttack()"
-      >
-        消耗 PP
-      </button>
+      <button class="w3-button w3-red" @click="applyAllAttack()">消耗 PP</button>
       <button
         class="w3-button w3-light-gray"
         style="margin-left: 0.3em"
@@ -1673,10 +1710,9 @@ onUpdated(() => {
 }
 
 .multi-target-panel :is(table.w3-table, table.w3-table-all) {
-  display: block;
+  display: table;
   width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
+  max-width: none;
   white-space: nowrap;
 }
 

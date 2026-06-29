@@ -36,7 +36,8 @@ function fitTokenText(
   fontSize: number,
   minFontSize: number
 ): { text: string; fontSize: number } {
-  const fontStack = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif"
+  const fontStack =
+    "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif"
   let size = fontSize
   while (size > minFontSize) {
     ctx.font = `bold ${size}px ${fontStack}`

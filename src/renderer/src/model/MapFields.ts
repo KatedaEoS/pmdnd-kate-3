@@ -84,7 +84,7 @@ export function normalizeFieldData(field: Partial<MapFieldData> | undefined): Ma
   const dcAbility = ['力量', '敏捷', '体质', '智力', '感知', '魅力'].includes(
     field?.dcAbility ?? ''
   )
-    ? field?.dcAbility ?? ''
+    ? (field?.dcAbility ?? '')
     : ''
   const fallbackDc = casterCode.length > 0 ? 0 : 10
   const rawDc = Math.floor(field?.dc ?? fallbackDc)
@@ -94,7 +94,9 @@ export function normalizeFieldData(field: Partial<MapFieldData> | undefined): Ma
   return { stateName, layers, casterCode, dcAbility, dc, color, remainingRounds }
 }
 
-export function drawingIsField(d: MapDrawing | undefined): d is MapDrawing & { field: MapFieldData } {
+export function drawingIsField(
+  d: MapDrawing | undefined
+): d is MapDrawing & { field: MapFieldData } {
   return Boolean(isAreaDrawing(d) && d.field && normalizeFieldData(d.field).remainingRounds != 0)
 }
 
@@ -235,17 +237,15 @@ export function fieldStatusesForCreature(
   for (const drawing of map.drawings) {
     if (!drawingIsField(drawing) || !creatureIsInFieldDrawing(creature, drawing, map)) continue
     const field = normalizeFieldData(drawing.field)
-    const entry =
-      entries.get(field.stateName) ??
-      {
-        stateName: field.stateName,
-        statusName: fieldStatusName(field.stateName),
-        layers: 0,
-        sourceCount: 0,
-        dcs: [],
-        casterCodes: [],
-        remainingRounds: []
-      }
+    const entry = entries.get(field.stateName) ?? {
+      stateName: field.stateName,
+      statusName: fieldStatusName(field.stateName),
+      layers: 0,
+      sourceCount: 0,
+      dcs: [],
+      casterCodes: [],
+      remainingRounds: []
+    }
     entry.layers += field.layers
     entry.sourceCount += 1
     if (!entry.dcs.includes(field.dc)) entry.dcs.push(field.dc)
@@ -285,9 +285,6 @@ export function fieldLabelPoint(d: MapDrawing): Point | null {
   if (d.type == 'circle' || d.type == 'cone' || d.type == 'sector') {
     return d.points[0] ?? null
   }
-  const sum = d.points.reduce(
-    (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
-    { x: 0, y: 0 }
-  )
+  const sum = d.points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 })
   return { x: sum.x / d.points.length, y: sum.y / d.points.length }
 }

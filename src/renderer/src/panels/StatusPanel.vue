@@ -230,42 +230,39 @@ onUpdated(() => {
 <template>
   <div class="status-panel">
     <div class="status-toolbar">
-      <label>
-        角色
-        <select
-          :value="memory.cur?.code() ?? ''"
-          class="w3-select w3-border"
-          @change="onChangeSelectedCreature(($event.target as HTMLSelectElement).value)"
-        >
-          <option value="">（选择角色）</option>
-          <option v-for="creature in thisCreatures" :key="creature.code()" :value="creature.code()">
-            {{ creature.name() }} {{ creature.code() }}
-          </option>
-        </select>
-      </label>
-    </div>
-
-    <div v-if="memory.cur != null">
-      <div class="w3-bar status-tabs">
+      <span class="status-field-label">角色</span>
+      <select
+        :value="memory.cur?.code() ?? ''"
+        class="w3-select w3-border status-creature-select"
+        @change="onChangeSelectedCreature(($event.target as HTMLSelectElement).value)"
+      >
+        <option value="">（选择角色）</option>
+        <option v-for="creature in thisCreatures" :key="creature.code()" :value="creature.code()">
+          {{ creature.name() }} {{ creature.code() }}
+        </option>
+      </select>
+      <div class="status-tabs" role="tablist" aria-label="状态管理视图">
         <button
-          class="w3-bar-item w3-button"
+          class="w3-button status-tab-button"
           :class="{ 'w3-black': memory.pageNumber == 1 }"
-          style="width: 50%"
+          :disabled="memory.cur == null"
           @click="toPartPage"
         >
           当前状态
         </button>
         <button
-          class="w3-bar-item w3-button"
+          class="w3-button status-tab-button"
           :class="{ 'w3-black': memory.pageNumber == 2 }"
-          style="width: 50%"
+          :disabled="memory.cur == null"
           @click="toFullPage"
         >
-          状态一览（点击刷新）
+          状态一览
         </button>
       </div>
+    </div>
 
-      <div style="padding-top: 0.5em">
+    <div v-if="memory.cur != null">
+      <div class="status-content">
         <div>
           <span class="round-indicator" :class="{ active: memory.cur.inRound }">
             {{ `现在${memory.cur.inRound ? '' : '不'}是${memory.cur.name()}的回合` }}
@@ -566,30 +563,54 @@ onUpdated(() => {
 .status-toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: end;
-  gap: 0.75em;
+  align-items: center;
+  gap: 0.5em;
   margin-bottom: 0.75em;
+  min-width: 0;
 }
 
-.status-toolbar label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25em;
-  min-width: 220px;
+.status-field-label {
+  flex: 0 0 auto;
   font-size: 13px;
+  font-weight: 650;
   color: #555;
+}
+
+.status-creature-select {
+  flex: 1 1 220px;
+  min-width: 180px;
+  max-width: 360px;
+  height: 32px;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 
 .status-tabs {
   display: flex;
-  flex-wrap: wrap;
-  background-color: white;
-  border-bottom: 1px solid #e8e8e8;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid #d8d8d8;
+  border-radius: 6px;
+  background-color: #fff;
 }
 
-.status-tabs .w3-button {
-  flex: 1 1 160px;
-  width: auto !important;
+.status-tab-button {
+  min-width: 88px;
+  padding: 7px 12px;
+  line-height: 1.2;
+}
+
+.status-tab-button + .status-tab-button {
+  border-left: 1px solid #d8d8d8;
+}
+
+.status-tab-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.status-content {
+  padding-top: 0.25em;
 }
 
 .status-panel :is(table.w3-table, table.w3-table-all) {

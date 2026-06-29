@@ -10,9 +10,15 @@ import {
   tagList
 } from '@renderer/model/DataType'
 import VueNumberInput from '@chenfengyuan/vue-number-input'
-import { ref, watch, computed } from 'vue'
-import { CharacterMemory, toolsMemory, ToolsMemory } from '@renderer/model/GlobalMemory'
-import Creatures from '@renderer/model/Creature'
+import { ref, watch, computed, nextTick } from 'vue'
+import {
+  CharacterMemory,
+  mapMemory,
+  toolsMemory,
+  ToolsMemory,
+  type MapAsset
+} from '@renderer/model/GlobalMemory'
+import Creatures, { type Creature } from '@renderer/model/Creature'
 import { valueToColorBinary } from '@renderer/utils'
 
 type CharacterPanelParams = {
@@ -27,8 +33,54 @@ const props = defineProps<{ params?: DockviewPanelProps }>()
 
 const memory = ref<CharacterMemory>(new CharacterMemory())
 const toolsMem = ref<ToolsMemory>(toolsMemory.value)
+const mm = mapMemory.value
+const tokenCanvas = ref<HTMLCanvasElement | null>(null)
 
 const creatureCode = computed(() => props.params?.params?.code ?? props.params?.code ?? '')
+const currentCode = computed(() => memory.value.cur?.code() ?? creatureCode.value)
+const currentName = computed(() => memory.value.cur?.name() ?? '')
+const portraitAsset = computed(() => findPortraitAsset(currentCode.value))
+const tokenAsset = computed(() => findTokenAsset(currentCode.value, currentName.value))
+const isOverviewPage = computed(() => memory.value.pageNumber == 1)
+const overviewBattleRows = computed(() => {
+  const cur = memory.value.cur
+  if (!cur) return []
+  return [
+    { label: '物攻', value: cur.patk(), change: overviewBattleChange(cur, 1) },
+    { label: '物防', value: cur.pdef(), change: overviewBattleChange(cur, 2) },
+    { label: '特攻', value: cur.satk(), change: overviewBattleChange(cur, 3) },
+    { label: '特防', value: cur.sdef(), change: overviewBattleChange(cur, 4) },
+    { label: '速度', value: cur.spd(), change: overviewBattleChange(cur, 5) }
+  ]
+})
+const overviewAbilityRows = computed(() => {
+  const cur = memory.value.cur
+  if (!cur) return []
+  return ['力量', '敏捷', '体质', '智力', '感知', '魅力'].map((label, idx) => ({
+    label,
+    value: cur.ability(idx),
+    modifier: cur.modifier(idx),
+    save: cur.save(idx)
+  }))
+})
+const overviewFeatureList = computed(() => {
+  const cur = memory.value.cur
+  if (!cur) return []
+  return [...cur.classFeatures, ...cur.nonClassFeatures].filter((feature) => feature.name.trim())
+})
+const overviewStatusList = computed(() => {
+  const cur = memory.value.cur
+  if (!cur) return []
+  return cur.status.status.filter((status) => status.stack > 0)
+})
+
+watch(
+  () => [tokenAsset.value?.dataUrl, memory.value.pageNumber],
+  () => {
+    nextTick(renderTokenPreview)
+  },
+  { immediate: true }
+)
 
 // 根据 params.code 定位角色
 watch(
@@ -40,36 +92,39 @@ watch(
         memory.value.cur = c
         c.shallowRefresh()
         // 默认打开能力页
-        if (memory.value.pageNumber < 1 || memory.value.pageNumber > 8) memory.value.pageNumber = 1
+        if (memory.value.pageNumber < 1 || memory.value.pageNumber > 9) memory.value.pageNumber = 1
       }
     }
   },
   { immediate: true }
 )
 
-function toStatPage(): void {
+function toOverviewPage(): void {
   memory.value.pageNumber = 1
 }
-function toSkillPage(): void {
+function toStatPage(): void {
   memory.value.pageNumber = 2
 }
-function toTypePage(): void {
+function toSkillPage(): void {
   memory.value.pageNumber = 3
 }
-function toResistPage(): void {
+function toTypePage(): void {
   memory.value.pageNumber = 4
 }
-function toFeaturesPage(): void {
+function toResistPage(): void {
   memory.value.pageNumber = 5
 }
-function toEquipmentsPage(): void {
+function toFeaturesPage(): void {
   memory.value.pageNumber = 6
 }
-function toMovesPage(): void {
+function toEquipmentsPage(): void {
   memory.value.pageNumber = 7
 }
-function toClassPage(): void {
+function toMovesPage(): void {
   memory.value.pageNumber = 8
+}
+function toClassPage(): void {
+  memory.value.pageNumber = 9
 }
 
 function movCal(): number {
@@ -89,6 +144,34 @@ function valueToColor(val: number): string {
   if (val == 0) return 'lightgray'
   else if (val > 0) return 'crimson'
   else return 'dodgerblue'
+}
+
+function signedValue(val: number): string {
+  return val > 0 ? `+${val}` : `${val}`
+}
+
+function overviewBattleChange(
+  cur: Creature,
+  index: 1 | 2 | 3 | 4 | 5
+): { text: string; color: string } {
+  const levelChange = cur.attributeChange.get(index)
+  const statusChange = cur.attributeDChange.get(index) + cur.grandStatus().attributeMdf.get(index)
+  const totalChange = levelChange + statusChange
+  const text =
+    statusChange == 0
+      ? signedValue(levelChange)
+      : `${signedValue(totalChange)}（状态 ${signedValue(statusChange)}）`
+  return {
+    text,
+    color: valueToColor(-totalChange)
+  }
+}
+
+function overviewFeatureSource(feature: Feature): string {
+  const parts = [feature.source, feature.sourceLevel].filter((part) => part.trim())
+  if (feature.innate) parts.push('固有')
+  if (!feature.known) parts.push('未知')
+  return parts.join(' / ')
 }
 
 function moveWheel(event: { preventDefault(): unknown; deltaY: number }): void {
@@ -175,6 +258,70 @@ function castLvFrom(type: string): number {
   )
 }
 
+function sameAssetCode(a: string | undefined, b: string): boolean {
+  return !!a && a.toLowerCase() == b.toLowerCase()
+}
+
+function findPortraitAsset(code: string): MapAsset | null {
+  if (!code) return null
+  const lower = code.toLowerCase()
+  return (
+    mm.assets.find(
+      (asset) =>
+        asset.usage == 'portrait' &&
+        (sameAssetCode(asset.portraitForCode, code) ||
+          asset.key.toLowerCase() == `portrait:${lower}` ||
+          asset.key.toLowerCase() == `${lower}-portrait`)
+    ) ?? null
+  )
+}
+
+function findTokenAsset(code: string, name: string): MapAsset | null {
+  if (!code) return null
+  const lowerCode = code.toLowerCase()
+  const lowerName = name.toLowerCase()
+  return (
+    mm.assets.find((asset) => {
+      if (asset.usage != 'token' && asset.usage != 'both') return false
+      if (sameAssetCode(asset.tokenForCode, code)) return true
+      const lowerKey = asset.key.toLowerCase()
+      return lowerKey == lowerCode || (!!lowerName && lowerKey == lowerName)
+    }) ?? null
+  )
+}
+
+function renderTokenPreview(): void {
+  const canvas = tokenCanvas.value
+  const dataUrl = tokenAsset.value?.dataUrl
+  if (!canvas || !dataUrl) return
+
+  const rect = canvas.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return
+  const dpr = window.devicePixelRatio || 1
+  canvas.width = Math.max(1, Math.round(rect.width * dpr))
+  canvas.height = Math.max(1, Math.round(rect.height * dpr))
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+  const img = new Image()
+  img.onload = () => {
+    if (tokenAsset.value?.dataUrl != dataUrl) return
+    const iw = img.naturalWidth
+    const ih = img.naturalHeight
+    if (iw <= 0 || ih <= 0) return
+    const scale = Math.min(rect.width / iw, rect.height / ih)
+    const drawW = iw * scale
+    const drawH = ih * scale
+    ctx.clearRect(0, 0, rect.width, rect.height)
+    ctx.imageSmoothingEnabled = drawW * dpr <= iw && drawH * dpr <= ih
+    ctx.drawImage(img, (rect.width - drawW) / 2, (rect.height - drawH) / 2, drawW, drawH)
+  }
+  img.src = dataUrl
+}
+
 function deleteCurrentCharacter(): void {
   const cur = memory.value.cur
   if (!cur) return
@@ -190,19 +337,33 @@ if (memory.value.cur != null) {
 </script>
 
 <template>
-  <div v-if="memory.cur != null" class="character-full-panel">
+  <div
+    v-if="memory.cur != null"
+    class="character-full-panel"
+    :class="{
+      'has-character-background': portraitAsset || tokenAsset,
+      'overview-mode': isOverviewPage
+    }"
+  >
     <div class="character-full-shell">
       <div class="w3-bar character-tabs">
         <button
           class="w3-bar-item w3-button"
           :class="{ 'w3-black': memory.pageNumber == 1 }"
+          @click="toOverviewPage"
+        >
+          概要
+        </button>
+        <button
+          class="w3-bar-item w3-button"
+          :class="{ 'w3-black': memory.pageNumber == 2 }"
           @click="toStatPage"
         >
           能力
         </button>
         <button
           class="w3-bar-item w3-button"
-          :class="{ 'w3-black': memory.pageNumber == 2 }"
+          :class="{ 'w3-black': memory.pageNumber == 3 }"
           @click="toSkillPage"
         >
           技术
@@ -210,7 +371,7 @@ if (memory.value.cur != null) {
         <button
           class="w3-bar-item w3-button"
           :class="{
-            'w3-black': memory.pageNumber == 3
+            'w3-black': memory.pageNumber == 4
           }"
           @click="toTypePage"
         >
@@ -218,59 +379,70 @@ if (memory.value.cur != null) {
         </button>
         <button
           class="w3-bar-item w3-button"
-          :class="{ 'w3-black': memory.pageNumber == 4 }"
+          :class="{ 'w3-black': memory.pageNumber == 5 }"
           @click="toResistPage"
         >
           抗性
         </button>
         <button
           class="w3-bar-item w3-button"
-          :class="{ 'w3-black': memory.pageNumber == 5 }"
+          :class="{ 'w3-black': memory.pageNumber == 6 }"
           @click="toFeaturesPage"
         >
           特性
         </button>
         <button
           class="w3-bar-item w3-button"
-          :class="{ 'w3-black': memory.pageNumber == 6 }"
+          :class="{ 'w3-black': memory.pageNumber == 7 }"
           @click="toEquipmentsPage"
         >
           装备与道具
         </button>
         <button
           class="w3-bar-item w3-button"
-          :class="{ 'w3-black': memory.pageNumber == 7 }"
+          :class="{ 'w3-black': memory.pageNumber == 8 }"
           @click="toMovesPage"
         >
           招式
         </button>
         <button
           class="w3-bar-item w3-button"
-          :class="{ 'w3-red': memory.pageNumber == 8 }"
+          :class="{ 'w3-red': memory.pageNumber == 9 }"
           @click="toClassPage"
         >
           种族与职业
         </button>
       </div>
       <div class="character-content">
-        <section class="character-summary">
-          <div class="character-title-row">
-            <div>
-              <div class="character-name">{{ memory.cur.name() }}</div>
-              <div class="character-code">{{ memory.cur.code() }}</div>
+        <div
+          v-if="tokenAsset && !isOverviewPage"
+          class="character-art-background token-only"
+          aria-hidden="true"
+        >
+          <canvas v-if="tokenAsset" ref="tokenCanvas" class="character-token-image"></canvas>
+        </div>
+        <section v-if="!isOverviewPage" class="character-summary">
+          <div class="character-summary-head">
+            <div class="character-title-row">
+              <div>
+                <div class="character-name-line">
+                  <span class="character-name">{{ memory.cur.name() }}</span>
+                  <span class="character-profile">
+                    {{ memory.cur.profile.gender }}性{{ memory.cur.profile.species }}（{{
+                      memory.cur.profile.pronoun
+                    }}），年龄 {{ memory.cur.profile.age }}
+                  </span>
+                </div>
+                <div class="character-code">{{ memory.cur.code() }}</div>
+              </div>
             </div>
-            <div class="character-profile">
-              {{ memory.cur.profile.gender }}性{{ memory.cur.profile.species }}（{{
-                memory.cur.profile.pronoun
-              }}），年龄 {{ memory.cur.profile.age }}
+            <div class="character-stats-strip">
+              <span>PLV {{ memory.cur.characterLv() }}</span>
+              <span>CR {{ memory.cur.battleLv() }}</span>
+              <span>施法者 {{ memory.cur.castLv() }}</span>
+              <span>种族最大 {{ memory.cur.maxPokemonRing() }} 环</span>
+              <span>施法最大 {{ memory.cur.maxRing() }} 环</span>
             </div>
-          </div>
-          <div class="character-stats-strip">
-            <span>人物 {{ memory.cur.characterLv() }}</span>
-            <span>挑战 {{ memory.cur.battleLv() }}</span>
-            <span>施法者 {{ memory.cur.castLv() }}</span>
-            <span>种族最大 {{ memory.cur.maxPokemonRing() }} 环</span>
-            <span>施法最大 {{ memory.cur.maxRing() }} 环</span>
           </div>
           <div class="resource-grid">
             <div class="resource-card hp-card">
@@ -330,7 +502,267 @@ if (memory.value.cur != null) {
             </div>
           </div>
         </section>
-        <div v-if="memory.pageNumber == 1">
+        <div v-if="isOverviewPage" class="character-overview">
+          <section class="overview-portrait-stage">
+            <img
+              v-if="portraitAsset"
+              class="overview-portrait-image"
+              :src="portraitAsset.dataUrl"
+              alt=""
+            />
+            <div v-else class="overview-portrait-fallback">
+              <span>{{ memory.cur.name() }}</span>
+            </div>
+          </section>
+
+          <section class="overview-sheet">
+            <div class="overview-heading">
+              <div>
+                <div class="overview-title-line">
+                  <h2>{{ memory.cur.name() }}</h2>
+                  <span class="overview-code">{{ memory.cur.code() }}</span>
+                </div>
+                <p>
+                  {{ memory.cur.profile.gender }}性{{ memory.cur.profile.species }}（{{
+                    memory.cur.profile.pronoun
+                  }}），年龄 {{ memory.cur.profile.age }}
+                </p>
+              </div>
+              <canvas v-if="tokenAsset" ref="tokenCanvas" class="overview-token-image"></canvas>
+            </div>
+
+            <div class="overview-chip-row">
+              <span>阵营 {{ memory.cur.faction }}</span>
+              <span>{{ sizeString(memory.cur.sizeAbility.size) }}</span>
+              <span>PLV {{ memory.cur.characterLv() }}</span>
+              <span>CR {{ memory.cur.battleLv() }}</span>
+              <span>施法者 {{ memory.cur.castLv() }}</span>
+              <span>先攻 {{ memory.cur.initiative() + memory.cur.tempInitiative }}</span>
+            </div>
+
+            <div class="overview-resource-grid">
+              <div class="resource-card hp-card overview-resource-card">
+                <div
+                  class="resource-fill hp"
+                  :style="{
+                    width:
+                      Math.max(
+                        Math.min(100, (100 * memory.cur.currentHP) / memory.cur.maxHP()),
+                        0
+                      ) + '%'
+                  }"
+                ></div>
+                <div class="resource-content resource-content-split">
+                  <div class="resource-main">
+                    <span class="resource-label">HP</span>
+                    <vue-number-input
+                      v-model="memory.cur.currentHP"
+                      size="small"
+                      inline
+                      center
+                      :step="1"
+                    />
+                    <span class="resource-max">/ {{ memory.cur.maxHP() }}</span>
+                    <span class="resource-percent">{{ memory.cur.hpPercentageString() }}</span>
+                  </div>
+                  <div class="resource-shield">
+                    <span class="resource-label muted-label">护盾</span>
+                    <vue-number-input
+                      v-model="memory.cur.tempHP"
+                      size="small"
+                      inline
+                      center
+                      :step="1"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div class="resource-card pp-card overview-resource-card">
+                <div
+                  class="resource-fill pp"
+                  :style="{
+                    width:
+                      Math.max(
+                        Math.min(100, (100 * memory.cur.currentPP) / memory.cur.maxPP()),
+                        0
+                      ) + '%'
+                  }"
+                ></div>
+                <div class="resource-content resource-content-compact">
+                  <span class="resource-label">PP</span>
+                  <vue-number-input
+                    v-model="memory.cur.currentPP"
+                    size="small"
+                    inline
+                    center
+                    :step="1"
+                  />
+                  <span>/ {{ memory.cur.maxPP() }}</span>
+                </div>
+              </div>
+            </div>
+
+            <section class="overview-card overview-scroll-card overview-status-card-inline">
+              <h3>状态</h3>
+              <div class="overview-scroll-list">
+                <div v-if="overviewStatusList.length == 0" class="overview-empty">暂无状态</div>
+                <template v-else>
+                  <article
+                    v-for="status in overviewStatusList"
+                    :key="`inline-${status.name}`"
+                    class="overview-list-item compact"
+                  >
+                    <strong>{{ status.name }}</strong>
+                    <small>{{ status.type ? '累积型' : '持续型' }} / {{ status.stack }} 层</small>
+                  </article>
+                </template>
+              </div>
+            </section>
+
+            <div class="overview-card-grid">
+              <section class="overview-card">
+                <h3>战斗能力</h3>
+                <div class="overview-stat-grid five-cols">
+                  <div v-for="row in overviewBattleRows" :key="row.label" class="overview-stat">
+                    <span>{{ row.label }}</span>
+                    <strong>{{ row.value }}</strong>
+                    <small :style="{ color: row.change.color }">{{ row.change.text }}</small>
+                  </div>
+                </div>
+              </section>
+
+              <section class="overview-card">
+                <h3>六维属性</h3>
+                <div class="overview-stat-grid six-cols">
+                  <div v-for="row in overviewAbilityRows" :key="row.label" class="overview-stat">
+                    <span>{{ row.label }}</span>
+                    <strong>{{ row.value }}</strong>
+                    <small
+                      >{{ signedValue(row.modifier) }} / 豁免 {{ signedValue(row.save) }}</small
+                    >
+                  </div>
+                </div>
+              </section>
+
+              <section class="overview-card overview-metrics-card">
+                <h3>行动与体型</h3>
+                <div class="overview-metric-groups">
+                  <div class="overview-metric-group">
+                    <h4>回合资源</h4>
+                    <div class="overview-metric-grid">
+                      <span>
+                        <em>移动</em>
+                        <strong
+                          >{{ memory.cur.currentMov }}/{{ memory.cur.sizeAbility.mov }}m</strong
+                        >
+                      </span>
+                      <span>
+                        <em>动作</em>
+                        <strong>{{ memory.cur.currentAction }}/{{ memory.cur.action }}</strong>
+                      </span>
+                      <span>
+                        <em>附赠</em>
+                        <strong
+                          >{{ memory.cur.currentBonusAction }}/{{ memory.cur.bonusAction }}</strong
+                        >
+                      </span>
+                      <span>
+                        <em>反应</em>
+                        <strong>{{ memory.cur.currentReaction }}/{{ memory.cur.reaction }}</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="overview-metric-group">
+                    <h4>体型空间</h4>
+                    <div class="overview-metric-grid">
+                      <span>
+                        <em>体型</em>
+                        <strong>{{ sizeString(memory.cur.sizeAbility.size) }}</strong>
+                      </span>
+                      <span>
+                        <em>占地</em>
+                        <strong
+                          >{{ memory.cur.sizeAbility.size }}m x
+                          {{ memory.cur.sizeAbility.size }}m</strong
+                        >
+                      </span>
+                      <span>
+                        <em>触及</em>
+                        <strong>{{ memory.cur.sizeAbility.reach }}m</strong>
+                      </span>
+                      <span>
+                        <em>身高</em>
+                        <strong>{{ memory.cur.sizeAbility.height.toFixed(2) }}m</strong>
+                      </span>
+                      <span>
+                        <em>体重</em>
+                        <strong>{{ memory.cur.sizeAbility.weight.toFixed(1) }}kg</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="overview-metric-group">
+                    <h4>负重与跳跃</h4>
+                    <div class="overview-metric-grid">
+                      <span>
+                        <em>载重</em>
+                        <strong
+                          >{{ memory.cur.currentLoadCapacity.toFixed(2) }}/{{
+                            memory.cur.maxCapacity().toFixed(2)
+                          }}kg</strong
+                        >
+                      </span>
+                      <span>
+                        <em>跳跃</em>
+                        <strong>{{ memory.cur.jumpDistance().toFixed(2) }}m</strong>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div class="overview-list-grid">
+              <section class="overview-card overview-scroll-card">
+                <h3>特性</h3>
+                <div class="overview-scroll-list">
+                  <div v-if="overviewFeatureList.length == 0" class="overview-empty">暂无特性</div>
+                  <template v-else>
+                    <article
+                      v-for="feature in overviewFeatureList"
+                      :key="`${feature.source}-${feature.sourceLevel}-${feature.name}`"
+                      class="overview-list-item"
+                    >
+                      <strong>{{ feature.name }}</strong>
+                      <small>{{ overviewFeatureSource(feature) }}</small>
+                      <p>{{ feature.description || '无描述' }}</p>
+                    </article>
+                  </template>
+                </div>
+              </section>
+
+              <section class="overview-card overview-scroll-card overview-status-card-list">
+                <h3>状态</h3>
+                <div class="overview-scroll-list">
+                  <div v-if="overviewStatusList.length == 0" class="overview-empty">暂无状态</div>
+                  <template v-else>
+                    <article
+                      v-for="status in overviewStatusList"
+                      :key="status.name"
+                      class="overview-list-item compact"
+                    >
+                      <strong>{{ status.name }}</strong>
+                      <small>{{ status.type ? '累积型' : '持续型' }} / {{ status.stack }} 层</small>
+                    </article>
+                  </template>
+                </div>
+              </section>
+            </div>
+          </section>
+        </div>
+
+        <div v-if="memory.pageNumber == 2">
           <details class="section-panel" open>
             <summary class="section-summary">
               <span class="section-title">体型与负重</span>
@@ -1511,7 +1943,7 @@ if (memory.value.cur != null) {
           </details>
         </div>
 
-        <div v-if="memory.pageNumber == 2">
+        <div v-if="memory.pageNumber == 3">
           <details class="section-panel" open>
             <summary class="section-summary">
               <span class="section-title">技术检定</span>
@@ -1628,7 +2060,7 @@ if (memory.value.cur != null) {
           </details>
         </div>
 
-        <div v-if="memory.pageNumber == 3">
+        <div v-if="memory.pageNumber == 4">
           <details class="section-panel" open>
             <summary class="section-summary">
               <span class="section-title">属性一致</span>
@@ -1720,7 +2152,7 @@ if (memory.value.cur != null) {
           </details>
         </div>
 
-        <div v-if="memory.pageNumber == 4">
+        <div v-if="memory.pageNumber == 5">
           <details class="section-panel" open>
             <summary class="section-summary">
               <span class="section-title">伤害修正</span>
@@ -1910,7 +2342,7 @@ if (memory.value.cur != null) {
           </details>
         </div>
 
-        <div v-if="memory.pageNumber == 5">
+        <div v-if="memory.pageNumber == 6">
           <div class="compact-toolbar">
             <label for="feature-search">筛选特性:</label>
             <input
@@ -2011,7 +2443,7 @@ if (memory.value.cur != null) {
           </details>
         </div>
 
-        <div v-if="memory.pageNumber == 6">
+        <div v-if="memory.pageNumber == 7">
           <div class="compact-toolbar">
             <label for="equipment-search">筛选装备:</label>
             <input
@@ -2184,7 +2616,7 @@ if (memory.value.cur != null) {
           </details>
         </div>
 
-        <div v-if="memory.pageNumber == 7">
+        <div v-if="memory.pageNumber == 8">
           <div class="compact-toolbar move-toolbar">
             <span>
               记忆位
@@ -2300,13 +2732,13 @@ if (memory.value.cur != null) {
           </details>
         </div>
 
-        <div v-if="memory.pageNumber == 8">
+        <div v-if="memory.pageNumber == 9">
           <details class="section-panel" open>
             <summary class="section-summary">
               <span class="section-title">种族</span>
               <span class="summary-metrics">
                 <span>{{ raceTypeCount('种族') }} 项</span>
-                <span>挑战 {{ memory.cur.battleLvFrom('种族').toFixed(1) }}</span>
+                <span>CR {{ memory.cur.battleLvFrom('种族').toFixed(1) }}</span>
                 <span>施法 {{ castLvFrom('种族').toFixed(1) }}</span>
               </span>
             </summary>
@@ -2373,7 +2805,7 @@ if (memory.value.cur != null) {
               <span class="section-title">职业</span>
               <span class="summary-metrics">
                 <span>{{ raceTypeCount('职业') }} 项</span>
-                <span>挑战 {{ memory.cur.battleLvFrom('职业').toFixed(1) }}</span>
+                <span>CR {{ memory.cur.battleLvFrom('职业').toFixed(1) }}</span>
                 <span>施法 {{ castLvFrom('职业').toFixed(1) }}</span>
               </span>
             </summary>
@@ -2511,6 +2943,17 @@ if (memory.value.cur != null) {
   min-height: 100%;
 }
 
+.character-full-panel.overview-mode {
+  overflow: hidden;
+}
+
+.overview-mode .character-full-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 .character-tabs {
   position: sticky;
   top: 0;
@@ -2533,9 +2976,29 @@ if (memory.value.cur != null) {
   white-space: nowrap;
 }
 
+.overview-mode .character-tabs {
+  position: relative;
+  top: auto;
+  flex: 0 0 auto;
+}
+
 .character-content {
+  position: relative;
+  isolation: isolate;
   min-width: 0;
   padding: 0.6em;
+  container-type: inline-size;
+}
+
+.overview-mode .character-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.character-content > :not(.character-art-background) {
+  position: relative;
+  z-index: 1;
 }
 
 .section-panel {
@@ -2668,12 +3131,26 @@ if (memory.value.cur != null) {
   border-bottom: 1px solid #eee;
 }
 
+.character-summary-head {
+  display: grid;
+  gap: 0.45em;
+  min-width: 0;
+}
+
 .character-title-row {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.4em 1em;
+}
+
+.character-name-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2em 0.55em;
+  min-width: 0;
 }
 
 .character-name {
@@ -2691,6 +3168,7 @@ if (memory.value.cur != null) {
 .character-profile {
   color: #555;
   font-size: 13px;
+  line-height: 1.25;
 }
 
 .character-stats-strip {
@@ -2708,6 +3186,377 @@ if (memory.value.cur != null) {
   font-size: 12px;
 }
 
+.character-art-background {
+  display: flex;
+  position: absolute;
+  top: 0.6em;
+  right: 0.6em;
+  z-index: 0;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.7em;
+  width: min(100%, 680px);
+  pointer-events: none;
+}
+
+.character-token-image,
+.overview-token-image,
+.overview-portrait-image {
+  display: block;
+  object-fit: contain;
+  background: transparent;
+}
+
+.character-token-image {
+  flex: 0 0 auto;
+  width: 74px;
+  height: 74px;
+  opacity: 0.88;
+}
+
+.overview-token-image {
+  flex: 0 0 auto;
+  width: 82px;
+  height: 82px;
+}
+
+.character-overview {
+  display: grid;
+  grid-template-columns: minmax(260px, 36%) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.9em;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.overview-portrait-stage {
+  position: relative;
+  top: auto;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(73, 56, 35, 0.28);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(42, 34, 28, 0.1)), #ece4d2;
+}
+
+.overview-portrait-stage::after {
+  content: '';
+  position: absolute;
+  inset: auto 8% 0;
+  height: 26%;
+  background: linear-gradient(180deg, rgba(94, 76, 56, 0), rgba(94, 76, 56, 0.22));
+  pointer-events: none;
+}
+
+.overview-portrait-image {
+  position: relative;
+  z-index: 1;
+  width: auto;
+  height: min(88%, 560px);
+  aspect-ratio: 3 / 4;
+  max-width: 92%;
+  max-height: calc(100% - 1.5em);
+  object-fit: contain;
+}
+
+.overview-portrait-fallback {
+  display: grid;
+  place-items: center;
+  width: auto;
+  height: min(88%, 560px);
+  max-width: 92%;
+  max-height: calc(100% - 1.5em);
+  aspect-ratio: 3 / 4;
+  border: 1px dashed rgba(73, 56, 35, 0.35);
+  color: rgba(38, 33, 28, 0.72);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.overview-sheet {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75em;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 0.25em;
+}
+
+.overview-sheet > * {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.overview-heading,
+.overview-card {
+  border: 1px solid rgba(98, 84, 66, 0.26);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(2px);
+  box-shadow: 0 1px 3px rgba(38, 33, 28, 0.08);
+}
+
+.overview-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75em;
+  padding: 0.85em;
+}
+
+.overview-title-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45em;
+}
+
+.overview-title-line h2,
+.overview-card h3 {
+  margin: 0;
+}
+
+.overview-title-line h2 {
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.overview-code {
+  color: #6c6258;
+  font-size: 13px;
+}
+
+.overview-heading p {
+  margin: 0.35em 0 0;
+  color: #4f4942;
+}
+
+.overview-chip-row,
+.overview-metric-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35em;
+}
+
+.overview-chip-row span,
+.overview-metric-list span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid rgba(98, 84, 66, 0.24);
+  background: rgba(255, 255, 255, 0.78);
+  color: #3d3832;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.overview-resource-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 0.55em;
+}
+
+.overview-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75em;
+}
+
+.overview-card {
+  padding: 0.75em;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.character-full-panel .overview-card h3 {
+  margin-bottom: 0.55em;
+  color: #2f2a25;
+  font-size: 15px;
+}
+
+.overview-metrics-card {
+  grid-column: 1 / -1;
+}
+
+.overview-stat-grid {
+  display: grid;
+  gap: 0.45em;
+}
+
+.overview-stat-grid.five-cols {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.overview-stat-grid.five-cols .overview-stat:nth-child(-n + 2) {
+  grid-column: span 3;
+}
+
+.overview-stat-grid.five-cols .overview-stat:nth-child(n + 3) {
+  grid-column: span 2;
+}
+
+.overview-stat-grid.six-cols {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.overview-stat {
+  display: grid;
+  gap: 0.1em;
+  min-width: 0;
+  padding: 0.55em 0.5em;
+  border: 1px solid rgba(98, 84, 66, 0.22);
+  background: rgba(255, 255, 255, 0.64);
+  text-align: center;
+}
+
+.overview-stat span,
+.overview-stat small,
+.overview-list-item small {
+  color: #62594f;
+}
+
+.overview-stat strong {
+  color: #1f2328;
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.overview-stat small {
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+.overview-metric-groups {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55em;
+}
+
+.overview-metric-group {
+  display: grid;
+  align-content: start;
+  gap: 0.45em;
+  min-width: 0;
+  padding: 0.55em;
+  border: 1px solid rgba(98, 84, 66, 0.18);
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.overview-metric-group:last-child {
+  grid-column: 1 / -1;
+}
+
+.overview-metric-group h4 {
+  margin: 0;
+  color: #51483f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.overview-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 82px), 1fr));
+  gap: 0.35em;
+}
+
+.overview-metric-grid span {
+  display: grid;
+  gap: 0.1em;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0.4em 0.45em;
+  border: 1px solid rgba(98, 84, 66, 0.16);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.overview-metric-grid em {
+  overflow: hidden;
+  color: #6c6258;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-metric-grid strong {
+  min-width: 0;
+  color: #24211d;
+  font-size: 13px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.overview-list-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(220px, 0.65fr);
+  gap: 0.75em;
+}
+
+.overview-scroll-card {
+  min-height: 0;
+}
+
+.overview-status-card-inline {
+  display: none;
+  justify-self: stretch;
+  width: 100%;
+  min-width: 0;
+  contain: none;
+  container-type: normal;
+}
+
+.overview-status-card-inline .overview-scroll-list {
+  min-height: 40px;
+  max-height: clamp(96px, 18vh, 180px);
+  overflow: auto;
+}
+
+.overview-scroll-list {
+  display: grid;
+  gap: 0.45em;
+  max-height: min(34vh, 280px);
+  overflow: auto;
+  padding-right: 0.25em;
+}
+
+.overview-list-item {
+  display: grid;
+  gap: 0.2em;
+  padding: 0.5em 0.55em;
+  border: 1px solid rgba(98, 84, 66, 0.18);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.overview-list-item.compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+}
+
+.overview-list-item p {
+  margin: 0;
+  color: #3f3a34;
+  font-size: 12px;
+  white-space: pre-line;
+}
+
+.overview-empty {
+  padding: 1.2em;
+  color: #6c6258;
+  text-align: center;
+}
+
 .resource-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
@@ -2721,6 +3570,19 @@ if (memory.value.cur != null) {
   overflow: hidden;
   border: 1px solid #ddd;
   background: #f1f1f1;
+}
+
+.overview-mode .overview-resource-card {
+  background: rgba(241, 241, 241, 0.78);
+  backdrop-filter: blur(1px);
+}
+
+.overview-mode .hp-card {
+  min-width: 0;
+}
+
+.overview-mode .resource-main {
+  flex: 1 1 auto;
 }
 
 .hp-card {
@@ -2743,6 +3605,14 @@ if (memory.value.cur != null) {
 
 .resource-fill.pp {
   background: #bdd4ff;
+}
+
+.overview-mode .overview-resource-card .resource-fill.hp {
+  background: rgba(185, 239, 185, 0.74);
+}
+
+.overview-mode .overview-resource-card .resource-fill.pp {
+  background: rgba(189, 212, 255, 0.74);
 }
 
 .resource-content {
@@ -2809,6 +3679,51 @@ if (memory.value.cur != null) {
   font-size: 12px;
 }
 
+@media (max-width: 720px) {
+  .character-overview {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .overview-portrait-stage {
+    display: none;
+  }
+
+  .character-token-image {
+    width: 58px;
+    height: 58px;
+  }
+
+  .overview-token-image {
+    width: 64px;
+    height: 64px;
+  }
+
+  .overview-portrait-image,
+  .overview-portrait-fallback {
+    width: min(72%, 320px);
+  }
+
+  .overview-sheet {
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .overview-resource-grid,
+  .overview-card-grid,
+  .overview-list-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-status-card-inline {
+    display: block;
+  }
+
+  .overview-status-card-list {
+    display: none;
+  }
+}
+
 @media (max-width: 560px) {
   .resource-grid {
     grid-template-columns: 1fr;
@@ -2825,6 +3740,85 @@ if (memory.value.cur != null) {
   .resource-main,
   .resource-shield {
     flex: 1 1 100%;
+    margin-left: 0;
+  }
+}
+
+@container (max-width: 720px) {
+  .character-overview {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .overview-portrait-stage {
+    display: none;
+  }
+
+  .overview-sheet {
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .overview-token-image {
+    width: 64px;
+    height: 64px;
+  }
+
+  .overview-portrait-image,
+  .overview-portrait-fallback {
+    width: min(72%, 320px);
+  }
+
+  .overview-resource-grid,
+  .overview-card-grid,
+  .overview-list-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-status-card-inline {
+    display: block;
+  }
+
+  .overview-status-card-list {
+    display: none;
+  }
+
+  .overview-metric-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container (max-width: 620px) {
+  .overview-stat-grid.five-cols {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .overview-stat-grid.five-cols .overview-stat:nth-child(-n + 2) {
+    grid-column: span 3;
+  }
+
+  .overview-stat-grid.five-cols .overview-stat:nth-child(n + 3) {
+    grid-column: span 2;
+  }
+
+  .overview-stat-grid.six-cols {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 560px) {
+  .overview-resource-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container (max-width: 400px) {
+  .overview-mode .resource-main {
+    flex: 1 1 100%;
+  }
+
+  .overview-mode .resource-shield {
+    flex: 0 1 auto;
     margin-left: 0;
   }
 }
@@ -2848,10 +3842,9 @@ if (memory.value.cur != null) {
 }
 
 .character-full-panel .dense-table {
-  display: block;
+  display: table;
   width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
+  max-width: none;
   font-size: 12px;
   white-space: nowrap;
 }

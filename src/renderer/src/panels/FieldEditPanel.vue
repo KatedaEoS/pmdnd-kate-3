@@ -58,7 +58,9 @@ function drawingLabel(idx: number): string {
   if (!drawing) return `${idx + 1}. 已删除`
   const field = drawing.field
   return `${idx + 1}. ${drawing.type}${
-    field ? ` / ${field.stateName} ${field.layers}层 / ${fieldRemainingText(field.remainingRounds ?? -1)}` : ' / 未设为场地'
+    field
+      ? ` / ${field.stateName} ${field.layers}层 / ${fieldRemainingText(field.remainingRounds ?? -1)}`
+      : ' / 未设为场地'
   }`
 }
 
@@ -162,16 +164,19 @@ watch(
 
       <label>
         剩余回合（-1 无限）
-        <vue-number-input v-model="memory.remainingRounds" size="small" inline center controls :min="-1" />
+        <vue-number-input
+          v-model="memory.remainingRounds"
+          size="small"
+          inline
+          center
+          controls
+          :min="-1"
+        />
       </label>
 
       <label>
         施法者
-        <select
-          v-model="memory.casterCode"
-          class="w3-select w3-border"
-          @change="recalculateDc"
-        >
+        <select v-model="memory.casterCode" class="w3-select w3-border" @change="recalculateDc">
           <option value="">大自然</option>
           <option v-for="creature in Creatures" :key="creature.code()" :value="creature.code()">
             {{ creature.name() }} {{ creature.code() }}
@@ -200,9 +205,7 @@ watch(
       <span>{{ selectedLabel }}：{{ memory.stateName }} {{ memory.layers }}层</span>
       <span>剩余 {{ fieldRemainingText(memory.remainingRounds) }}</span>
       <span>施法者 {{ memory.casterCode || '大自然' }}</span>
-      <span v-if="memory.casterCode">
-        DC 属性 {{ memory.dcAbility || '不指定' }}
-      </span>
+      <span v-if="memory.casterCode"> DC 属性 {{ memory.dcAbility || '不指定' }} </span>
       <span>DC {{ memory.dc }}</span>
     </div>
 
@@ -215,11 +218,7 @@ watch(
         应用到当前对象
       </button>
       <button class="w3-button w3-light-gray" @click="applyToAll">应用到全部面积图形</button>
-      <button
-        class="w3-button w3-light-gray"
-        :disabled="!selectedIsField"
-        @click="clearSelected"
-      >
+      <button class="w3-button w3-light-gray" :disabled="!selectedIsField" @click="clearSelected">
         当前对象取消场地
       </button>
     </div>

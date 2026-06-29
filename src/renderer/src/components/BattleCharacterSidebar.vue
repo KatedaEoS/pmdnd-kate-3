@@ -53,7 +53,15 @@ function creatureTitle(creature: Creature): string {
 <template>
   <div
     v-if="!props.collapsible && !props.includeDm"
-    style="width: 14em; flex-shrink: 0; overflow-y: auto; min-height: 0; border-right: 1px solid #e0e0e0; font-size: 13px; background: #fafafa"
+    style="
+      width: 14em;
+      flex-shrink: 0;
+      overflow-y: auto;
+      min-height: 0;
+      border-right: 1px solid #e0e0e0;
+      font-size: 13px;
+      background: #fafafa;
+    "
   >
     <div
       v-for="creature in thisCreatures"
@@ -71,10 +79,25 @@ function creatureTitle(creature: Creature): string {
           width: Math.max(Math.min(100, (100 * creature.currentHP) / creature.maxHP()), 0) + '%'
         }"
       />
-      <div style="position: relative; padding: 4px 8px; display: flex; justify-content: space-between; align-items: center">
-        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500">{{ creature.name() }}</span>
+      <div
+        style="
+          position: relative;
+          padding: 4px 8px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
+        <span
+          style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500"
+          >{{ creature.name() }}</span
+        >
         <span v-if="props.showVitals" style="flex-shrink: 0; font-size: 11px">
-          <span :style="{ color: `hsl(${Math.max(0, Math.min(120, (120 * creature.currentHP) / creature.maxHP()))}, ${creature.currentHP > 0 ? '70%' : '100%'}, ${creature.currentHP > 0 ? '40%' : '50%'})` }">
+          <span
+            :style="{
+              color: `hsl(${Math.max(0, Math.min(120, (120 * creature.currentHP) / creature.maxHP()))}, ${creature.currentHP > 0 ? '70%' : '100%'}, ${creature.currentHP > 0 ? '40%' : '50%'})`
+            }"
+          >
             {{ showHP([creature.currentHP, creature.tempHP]) }}/{{ creature.maxHP() }}
           </span>
           <span style="margin-left: 0.3em; color: steelblue">{{ creature.currentPP }}</span>
@@ -84,15 +107,8 @@ function creatureTitle(creature: Creature): string {
     </div>
   </div>
 
-  <aside
-    v-else
-    class="battle-character-sidebar"
-    :class="{ compact }"
-  >
-    <div
-      v-if="props.collapsible"
-      class="sidebar-header"
-    >
+  <aside v-else class="battle-character-sidebar" :class="{ compact }">
+    <div v-if="props.collapsible" class="sidebar-header">
       <button
         class="sidebar-toggle"
         type="button"
@@ -136,18 +152,12 @@ function creatureTitle(creature: Creature): string {
           }"
         />
         <div class="sidebar-row-inner">
-          <span
-            v-if="compact"
-            class="sidebar-avatar"
-          >
+          <span v-if="compact" class="sidebar-avatar">
             {{ creatureInitial(creature) }}
           </span>
           <template v-else>
             <span class="sidebar-name">{{ creature.name() }}</span>
-            <span
-              v-if="props.showVitals"
-              class="sidebar-vitals"
-            >
+            <span v-if="props.showVitals" class="sidebar-vitals">
               <span
                 :style="{
                   color: `hsl(${Math.max(0, Math.min(120, (120 * creature.currentHP) / creature.maxHP()))}, ${creature.currentHP > 0 ? '70%' : '100%'}, ${creature.currentHP > 0 ? '40%' : '50%'})`
@@ -157,10 +167,7 @@ function creatureTitle(creature: Creature): string {
               </span>
               <span class="sidebar-pp">{{ creature.currentPP }}</span>
             </span>
-            <span
-              v-else
-              class="sidebar-code"
-            >
+            <span v-else class="sidebar-code">
               {{ creature.code() }}
             </span>
           </template>

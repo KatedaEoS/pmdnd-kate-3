@@ -368,809 +368,826 @@ onUpdated(() => {
 
 <template>
   <div class="move-panel">
-  <BattleCharacterSidebar :on-change="thisOnChangeSelectedCreature" />
-  <div class="move-panel-main">
-    <div class="move-panel-header">
-      <div class="w3-bar">
-        <button
-          class="w3-bar-item w3-button"
-          :class="{ 'w3-black': memory.attacker != null }"
-          style="width: 50%"
-          @click="thisRemoveAttacker"
-        >
-          {{
-            memory.attacker == null
-              ? '未选择攻击方'
-              : `攻击方：${memory.attacker.name()} ${memory.attacker.code()}`
-          }}
-        </button>
-        <button
-          class="w3-bar-item w3-button"
-          :class="{ 'w3-black': memory.defender != null }"
-          style="width: 50%"
-          @click="thisRemoveDefender"
-        >
-          {{
-            memory.defender == null
-              ? '未选择防御方'
-              : `防御方：${memory.defender.name()} ${memory.defender.code()}`
-          }}
-        </button>
-      </div>
-
-      <div class="w3-bar">
-        <button
-          class="w3-bar-item w3-button"
-          :class="{ 'w3-black': memory.attackType == 1 }"
-          style="width: 33.3%"
-        >
-          攻击
-        </button>
-        <button
-          class="w3-bar-item w3-button"
-          :class="{ 'w3-black': memory.attackType == 2 }"
-          style="width: 33.3%"
-        >
-          治疗或护盾
-        </button>
-        <button
-          class="w3-bar-item w3-button"
-          :class="{ 'w3-black': memory.attackType == 3 }"
-          style="width: 33.3%"
-        >
-          状态或自定义伤害
-        </button>
-      </div>
-    </div>
-
-    <div class="move-panel-content">
-      <div v-if="memory.attacker != null">
-        <div>
-          <button class="w3-button w3-light-gray">{{ memory.attacker.name() }}</button> 要使用招式
-          <input
-            v-model="movem.selectedMove"
-            class="w3-input"
-            style="width: 12em"
-            list="suggestions"
-            @change="setCurrentMove()"
-          />
-          <datalist id="suggestions">
-            <option
-              v-for="name in memory.attacker.getMoveInMemoryList()"
-              :key="name"
-              :value="name"
-            ></option>
-          </datalist>
-          <select
-            v-model="movem.selectedMove"
-            style="width: 10em"
-            class="w3-select w3-border"
-            @change="setCurrentMove()"
-            @wheel="moveWheel"
+    <BattleCharacterSidebar :on-change="thisOnChangeSelectedCreature" />
+    <div class="move-panel-main">
+      <div class="move-panel-header">
+        <div class="w3-bar">
+          <button
+            class="w3-bar-item w3-button"
+            :class="{ 'w3-black': memory.attacker != null }"
+            style="width: 50%"
+            @click="thisRemoveAttacker"
           >
-            <option v-for="name in memory.attacker.getMoveInMemoryList()" :key="name" :value="name">
-              {{ name }}
-            </option>
-          </select>
-          ，消耗
-          <vue-number-input
-            v-if="memory.attackType == 0"
-            v-model="movem.nullCostPP"
-            size="small"
-            inline
-            center
-            controls
-            :step="15"
-            :min="0"
-          />
-          <vue-number-input
-            v-if="memory.attackType == 1"
-            v-model="memory.costPP"
-            size="small"
-            inline
-            center
-            controls
-            :step="15"
-            :min="0"
-          />
-          <vue-number-input
-            v-if="memory.attackType == 2"
-            v-model="memoryHeal.costPP"
-            size="small"
-            inline
-            center
-            controls
-            :step="15"
-            :min="0"
-          />
-          <vue-number-input
-            v-if="memory.attackType == 3"
-            v-model="memoryStatus.costPP"
-            size="small"
-            inline
-            center
-            controls
-            :step="15"
-            :min="0"
-          />
-          PP
+            {{
+              memory.attacker == null
+                ? '未选择攻击方'
+                : `攻击方：${memory.attacker.name()} ${memory.attacker.code()}`
+            }}
+          </button>
+          <button
+            class="w3-bar-item w3-button"
+            :class="{ 'w3-black': memory.defender != null }"
+            style="width: 50%"
+            @click="thisRemoveDefender"
+          >
+            {{
+              memory.defender == null
+                ? '未选择防御方'
+                : `防御方：${memory.defender.name()} ${memory.defender.code()}`
+            }}
+          </button>
         </div>
-        <div v-if="currentMove().name.length > 0">
-          <div v-if="currentMove().inMemory.length <= 0" style="color: crimson">该招式未预备</div>
-          <div v-if="currentMove().maxCharge > 0">
-            次数剩余：{{ currentMove().chargeAt }} {{ currentMove().charge }} /
-            {{ currentMove().maxCharge }}
-          </div>
-          <div>
-            {{ currentMove().ring < 0 ? `动作` : `${currentMove().ring} 环` }}
-            {{ currentMove().elemType }}
-            {{ currentMove().castAbility }} | 施法资源：{{ currentMove().costs() }} | 施法距离：{{
-              currentMove().castRange
-            }}{{ currentMove().castRange.includes('*') ? '（受威胁）' : '' }}
-          </div>
-          <div>
-            法术成分：{{ currentMove().components() }} | 持续时间：{{
-              currentMove().concentration.length > 0 ? '专注，至多 ' : ''
-            }}{{ currentMove().duration.length > 0 ? currentMove().duration : '立即' }}
-          </div>
-          <div v-if="currentMove().cooldown.length > 0">冷却回合：{{ currentMove().cooldown }}</div>
+
+        <div class="w3-bar">
+          <button
+            class="w3-bar-item w3-button"
+            :class="{ 'w3-black': memory.attackType == 1 }"
+            style="width: 33.3%"
+          >
+            攻击
+          </button>
+          <button
+            class="w3-bar-item w3-button"
+            :class="{ 'w3-black': memory.attackType == 2 }"
+            style="width: 33.3%"
+          >
+            治疗或护盾
+          </button>
+          <button
+            class="w3-bar-item w3-button"
+            :class="{ 'w3-black': memory.attackType == 3 }"
+            style="width: 33.3%"
+          >
+            状态或自定义伤害
+          </button>
         </div>
-        <div v-if="currentMove().name.length > 0">
+      </div>
+
+      <div class="move-panel-content">
+        <div v-if="memory.attacker != null">
           <div>
-            选择威力：
+            <button class="w3-button w3-light-gray">{{ memory.attacker.name() }}</button> 要使用招式
+            <input
+              v-model="movem.selectedMove"
+              class="w3-input"
+              style="width: 12em"
+              list="suggestions"
+              @change="setCurrentMove()"
+            />
+            <datalist id="suggestions">
+              <option
+                v-for="name in memory.attacker.getMoveInMemoryList()"
+                :key="name"
+                :value="name"
+              ></option>
+            </datalist>
             <select
-              v-model="movem.selectedPowerIdx"
-              style="width: 30em"
+              v-model="movem.selectedMove"
+              style="width: 10em"
               class="w3-select w3-border"
               @change="setCurrentMove()"
-              @wheel="movePowerWheel"
+              @wheel="moveWheel"
             >
-              <option v-for="pwr in currentMove().powerList" :key="pwr.idx" :value="pwr.idx">
-                {{ pwr.message() }}
+              <option
+                v-for="name in memory.attacker.getMoveInMemoryList()"
+                :key="name"
+                :value="name"
+              >
+                {{ name }}
               </option>
             </select>
+            ，消耗
+            <vue-number-input
+              v-if="memory.attackType == 0"
+              v-model="movem.nullCostPP"
+              size="small"
+              inline
+              center
+              controls
+              :step="15"
+              :min="0"
+            />
+            <vue-number-input
+              v-if="memory.attackType == 1"
+              v-model="memory.costPP"
+              size="small"
+              inline
+              center
+              controls
+              :step="15"
+              :min="0"
+            />
+            <vue-number-input
+              v-if="memory.attackType == 2"
+              v-model="memoryHeal.costPP"
+              size="small"
+              inline
+              center
+              controls
+              :step="15"
+              :min="0"
+            />
+            <vue-number-input
+              v-if="memory.attackType == 3"
+              v-model="memoryStatus.costPP"
+              size="small"
+              inline
+              center
+              controls
+              :step="15"
+              :min="0"
+            />
+            PP
           </div>
+          <div v-if="currentMove().name.length > 0">
+            <div v-if="currentMove().inMemory.length <= 0" style="color: crimson">该招式未预备</div>
+            <div v-if="currentMove().maxCharge > 0">
+              次数剩余：{{ currentMove().chargeAt }} {{ currentMove().charge }} /
+              {{ currentMove().maxCharge }}
+            </div>
+            <div>
+              {{ currentMove().ring < 0 ? `动作` : `${currentMove().ring} 环` }}
+              {{ currentMove().elemType }}
+              {{ currentMove().castAbility }} | 施法资源：{{ currentMove().costs() }} | 施法距离：{{
+                currentMove().castRange
+              }}{{ currentMove().castRange.includes('*') ? '（受威胁）' : '' }}
+            </div>
+            <div>
+              法术成分：{{ currentMove().components() }} | 持续时间：{{
+                currentMove().concentration.length > 0 ? '专注，至多 ' : ''
+              }}{{ currentMove().duration.length > 0 ? currentMove().duration : '立即' }}
+            </div>
+            <div v-if="currentMove().cooldown.length > 0">
+              冷却回合：{{ currentMove().cooldown }}
+            </div>
+          </div>
+          <div v-if="currentMove().name.length > 0">
+            <div>
+              选择威力：
+              <select
+                v-model="movem.selectedPowerIdx"
+                style="width: 30em"
+                class="w3-select w3-border"
+                @change="setCurrentMove()"
+                @wheel="movePowerWheel"
+              >
+                <option v-for="pwr in currentMove().powerList" :key="pwr.idx" :value="pwr.idx">
+                  {{ pwr.message() }}
+                </option>
+              </select>
+            </div>
 
-          <div v-if="memory.attackType == 1">
-            <p>
-              攻击等级 {{ battleLv() }} | {{ memory.spellType }}：属性一致加成
-              {{ spellTypeStab() }} |
-              <button class="w3-button w3-light-gray" @click="memory.dicerollD += spellModifier()">
-                {{ memory.spellMod }}：{{ spellModifier() }}
-              </button>
-              ，DC {{ memory.attacker.getMoveDC(currentMove().name) }} +
-              <vue-number-input
-                v-model="movem.dcDelta"
-                size="small"
-                inline
-                center
-                controls
-                :step="1"
-              />
-            </p>
-            <div v-if="memory.defender != null">
+            <div v-if="memory.attackType == 1">
               <p>
-                {{ memory.spellAttack }} {{ spellAttack() }} {{ memory.damageDefense }}
-                {{ damageDefense() }}
-              </p>
-              <p class="battlepage-item">
-                伤害修正：{{
-                  memory.defender.typeMdf(memory.damageType) +
-                  memory.defender.typeMdf(memory.damageAspect) +
-                  memory.defender.grandStatus().grandMdf
-                }}
-                <span
-                  v-if="envTypeMdfTotal([memory.damageType, memory.damageAspect], memory.attacker) != 0"
-                >
-                  + 天气场地
-                  {{
-                    envTypeMdfTotal([memory.damageType, memory.damageAspect], memory.attacker).toFixed(1)
-                  }}
-                </span>
-                +
-                <vue-number-input
-                  v-model="memory.damageMdfD"
-                  size="medium"
-                  inline
-                  center
-                  controls
-                  :step="0.1"
-                />
-                =
-                <span
-                  style="margin-top: 0.3em; font-size: larger; font-weight: bold"
-                  :style="{ color: valueToColor(-damageMdf()) }"
-                  >{{ damageMdf().toFixed(1) }}</span
-                >
-              </p>
-              <p class="battlepage-item">
-                招式掷骰
+                攻击等级 {{ battleLv() }} | {{ memory.spellType }}：属性一致加成
+                {{ spellTypeStab() }} |
                 <button
-                  class="w3-button"
-                  :class="{ 'w3-black': !memory.enableCT }"
-                  @click="toggleEnableCT"
+                  class="w3-button w3-light-gray"
+                  @click="memory.dicerollD += spellModifier()"
                 >
-                  {{ memory.enableCT ? '启用暴击' : '禁用暴击' }}
+                  {{ memory.spellMod }}：{{ spellModifier() }}
                 </button>
+                ，DC {{ memory.attacker.getMoveDC(currentMove().name) }} +
                 <vue-number-input
-                  v-model="memory.ctLimit"
-                  size="medium"
-                  inline
-                  center
-                  controls
-                  :step="1"
-                  :min="1"
-                  :max="20"
-                />
-                <button
-                  class="w3-button"
-                  :class="{ 'w3-black': !memory.enableMiss }"
-                  @click="toggleEnableMiss"
-                >
-                  {{ memory.enableMiss ? '启用大失败' : '禁用大失败' }}
-                </button>
-                <button
-                  class="w3-button"
-                  :class="{ 'w3-black': !memory.enableAccuracyAdvance }"
-                  @click="toggleEnableAccuracyAdvance"
-                >
-                  {{ memory.enableAccuracyAdvance ? '命中减值有效' : '命中减值无效' }}
-                </button>
-                优劣势
-                <vue-number-input
-                  v-model="memory.advantageDelta"
+                  v-model="movem.dcDelta"
                   size="small"
                   inline
                   center
                   controls
                   :step="1"
                 />
+              </p>
+              <div v-if="memory.defender != null">
+                <p>
+                  {{ memory.spellAttack }} {{ spellAttack() }} {{ memory.damageDefense }}
+                  {{ damageDefense() }}
+                </p>
+                <p class="battlepage-item">
+                  伤害修正：{{
+                    memory.defender.typeMdf(memory.damageType) +
+                    memory.defender.typeMdf(memory.damageAspect) +
+                    memory.defender.grandStatus().grandMdf
+                  }}
+                  <span
+                    v-if="
+                      envTypeMdfTotal([memory.damageType, memory.damageAspect], memory.attacker) !=
+                      0
+                    "
+                  >
+                    + 天气场地
+                    {{
+                      envTypeMdfTotal(
+                        [memory.damageType, memory.damageAspect],
+                        memory.attacker
+                      ).toFixed(1)
+                    }}
+                  </span>
+                  +
+                  <vue-number-input
+                    v-model="memory.damageMdfD"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="0.1"
+                  />
+                  =
+                  <span
+                    style="margin-top: 0.3em; font-size: larger; font-weight: bold"
+                    :style="{ color: valueToColor(-damageMdf()) }"
+                    >{{ damageMdf().toFixed(1) }}</span
+                  >
+                </p>
+                <p class="battlepage-item">
+                  招式掷骰
+                  <button
+                    class="w3-button"
+                    :class="{ 'w3-black': !memory.enableCT }"
+                    @click="toggleEnableCT"
+                  >
+                    {{ memory.enableCT ? '启用暴击' : '禁用暴击' }}
+                  </button>
+                  <vue-number-input
+                    v-model="memory.ctLimit"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                    :min="1"
+                    :max="20"
+                  />
+                  <button
+                    class="w3-button"
+                    :class="{ 'w3-black': !memory.enableMiss }"
+                    @click="toggleEnableMiss"
+                  >
+                    {{ memory.enableMiss ? '启用大失败' : '禁用大失败' }}
+                  </button>
+                  <button
+                    class="w3-button"
+                    :class="{ 'w3-black': !memory.enableAccuracyAdvance }"
+                    @click="toggleEnableAccuracyAdvance"
+                  >
+                    {{ memory.enableAccuracyAdvance ? '命中减值有效' : '命中减值无效' }}
+                  </button>
+                  优劣势
+                  <vue-number-input
+                    v-model="memory.advantageDelta"
+                    size="small"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                  />
+                  <button
+                    class="w3-button"
+                    :class="{ 'w3-red': memory.defender.grandStatus().autoCrit }"
+                    @click="rolld20"
+                  >
+                    {{
+                      memory.defender.grandStatus().autoCrit ? '自动暴击' : '投掷攻击掷骰'
+                    }}</button
+                  ><span
+                    v-if="getAttackAdvantage(memory.spellMod) != 0"
+                    class="battlepage-item"
+                    :style="{
+                      color: valueToColor(-getAttackAdvantage(memory.spellMod))
+                    }"
+                  >
+                    {{ toAdvantage(getAttackAdvantage(memory.spellMod)) }} </span
+                  >：
+                </p>
+                <p class="battlepage-item">
+                  原始值
+                  <vue-number-input
+                    :model-value="memory.diceroll"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                    :min="1"
+                    :max="20"
+                    @update:model-value="(v: number) => modifyWorldlineMemory(memory, v)"
+                  />
+                  + 加值
+                  <span
+                    style="font-weight: bold; font-size: larger"
+                    :style="{ color: valueToColor(-spellModifier()) }"
+                    >{{ spellModifier() }}</span
+                  >
+                  + 命中
+                  <span
+                    style="font-weight: bold; font-size: larger"
+                    :style="{ color: valueToColor(-accuracyAdvance()) }"
+                    >{{ accuracyAdvance() }}</span
+                  >
+                  + 其他调整值
+                  <vue-number-input
+                    v-model="memory.dicerollD"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                  />
+                  =
+                  <span
+                    class="w3-right"
+                    style="margin-top: 0.3em; font-size: larger; font-weight: bold"
+                    :style="{ color: valueToColor(-memory.dicerollD) }"
+                    >{{ attackDiceroll() }} ({{ attackDicerollPercentage() }}%)</span
+                  >
+                </p>
+                <p class="battlepage-item">
+                  <a style="font-size: x-large">伤害：{{ damageCalc() }}</a>
+                  <button class="w3-button w3-center" @click="copyAttackMessageToClipboard">
+                    复制到剪贴板
+                  </button>
+                  <button class="w3-button w3-center w3-blue w3-right" @click="applyAttackResult">
+                    应用更改
+                  </button>
+                </p>
+                <textarea
+                  data-autosize
+                  style="width: 100%; height: calc(100vh - 43em); resize: none"
+                  :value="attackMessage()"
+                ></textarea>
+              </div>
+            </div>
+            <div v-if="memory.attackType == 2">
+              <p>
+                {{ memoryHeal.spellType }}：属性一致加成 {{ spellTypeStabHeal() }} |
                 <button
-                  class="w3-button"
-                  :class="{ 'w3-red': memory.defender.grandStatus().autoCrit }"
-                  @click="rolld20"
+                  class="w3-button w3-light-gray"
+                  @click="memoryHeal.dicerollD += spellModifierHeal()"
                 >
-                  {{ memory.defender.grandStatus().autoCrit ? '自动暴击' : '投掷攻击掷骰' }}</button
-                ><span
-                  v-if="getAttackAdvantage(memory.spellMod) != 0"
-                  class="battlepage-item"
-                  :style="{
-                    color: valueToColor(-getAttackAdvantage(memory.spellMod))
-                  }"
-                >
-                  {{ toAdvantage(getAttackAdvantage(memory.spellMod)) }} </span
-                >：
+                  {{ memoryHeal.spellMod }}：{{ spellModifierHeal() }}
+                </button>
+                ，DC
+                {{ memory.attacker.getMoveDC(currentMove().name) }}
               </p>
-              <p class="battlepage-item">
-                原始值
-                <vue-number-input
-                  :model-value="memory.diceroll"
-                  size="medium"
-                  inline
-                  center
-                  controls
-                  :step="1"
-                  :min="1"
-                  :max="20"
-                  @update:model-value="(v: number) => modifyWorldlineMemory(memory, v)"
-                />
-                + 加值
-                <span
-                  style="font-weight: bold; font-size: larger"
-                  :style="{ color: valueToColor(-spellModifier()) }"
-                  >{{ spellModifier() }}</span
+              <div v-if="memory.defender != null">
+                <p>
+                  治疗：{{ memoryHeal.spellAttack }} {{ spellAttackHeal() }} | 护盾：{{
+                    memoryHeal.spellAttackShield
+                  }}
+                  {{ spellAttackHealShield() }}
+                </p>
+                <p class="battlepage-item">
+                  伤害修正：
+                  <vue-number-input
+                    v-model="memoryHeal.damageMdfD"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="0.1"
+                  />
+                  =
+                  <span
+                    style="margin-top: 0.3em; font-size: larger; font-weight: bold"
+                    :style="{ color: valueToColor(-healMdf()) }"
+                    >{{ healMdf().toFixed(1) }}</span
+                  >
+                </p>
+                <p class="battlepage-item">
+                  招式掷骰
+                  <button
+                    class="w3-button"
+                    :class="{ 'w3-black': !memoryHeal.enableCT }"
+                    @click="toggleEnableCT"
+                  >
+                    {{ memoryHeal.enableCT ? '启用暴击' : '禁用暴击' }}
+                  </button>
+                  <vue-number-input
+                    v-model="memoryHeal.ctLimit"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                    :min="1"
+                    :max="20"
+                  />
+                  <button
+                    class="w3-button"
+                    :class="{ 'w3-black': !memoryHeal.enableMiss }"
+                    @click="toggleEnableMiss"
+                  >
+                    {{ memoryHeal.enableMiss ? '启用大失败' : '禁用大失败' }}
+                  </button>
+                  优劣势
+                  <vue-number-input
+                    v-model="memoryHeal.advantageDelta"
+                    size="small"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                  />
+                  <button class="w3-button" @click="rollHeald20">投掷攻击掷骰</button>：
+                </p>
+                <p class="battlepage-item">
+                  原始值
+                  <vue-number-input
+                    :model-value="memoryHeal.diceroll"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                    :min="1"
+                    :max="20"
+                    @update:model-value="(v: number) => modifyWorldlineMemory(memoryHeal, v)"
+                  />
+                  + 加值
+                  <span
+                    style="font-weight: bold; font-size: larger"
+                    :style="{ color: valueToColor(-spellModifierHeal()) }"
+                    >{{ spellModifierHeal() }}</span
+                  >
+                  + 其他调整值
+                  <vue-number-input
+                    v-model="memoryHeal.dicerollD"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                  />
+                  =
+                  <span
+                    class="w3-right"
+                    style="margin-top: 0.3em; font-size: larger; font-weight: bold"
+                    :style="{ color: valueToColor(-memoryHeal.dicerollD) }"
+                    >{{ healDiceroll() }} ({{ healDicerollPercentage() }}%)</span
+                  >
+                </p>
+                <div v-if="currentPower().elemType == '治疗'">
+                  <p class="battlepage-item">
+                    <a style="font-size: x-large">治疗：{{ healCalc() }}</a>
+                    <button class="w3-button w3-center" @click="copyHealMessageToClipboard">
+                      复制到剪贴板
+                    </button>
+                    <button
+                      class="w3-button w3-center w3-right"
+                      :class="{
+                        'w3-red': memory.defender.currentHP != memory.defender.maxHP(),
+                        'w3-blue': memory.defender.currentHP == memory.defender.maxHP()
+                      }"
+                      @click="applyHealResult"
+                    >
+                      应用更改
+                    </button>
+                  </p>
+
+                  <textarea
+                    data-autosize
+                    style="width: 100%; height: calc(100vh - 43em); resize: none"
+                    :value="healMessage()"
+                  ></textarea>
+                </div>
+                <div v-if="currentPower().elemType == '护盾'">
+                  <p class="battlepage-item">
+                    <a style="font-size: x-large">获得护盾：{{ healShieldCalc() }}</a>
+                    <button class="w3-button w3-center" @click="copyHealShieldMessageToClipboard">
+                      复制到剪贴板
+                    </button>
+                    护盾的来源只能有一个
+                    <button
+                      class="w3-button w3-center w3-red w3-right"
+                      @click="applyHealShieldResult"
+                    >
+                      应用更改
+                    </button>
+                  </p>
+
+                  <textarea
+                    data-autosize
+                    style="width: 100%; height: calc(100vh - 43em); resize: none"
+                    :value="healShieldMessage()"
+                  ></textarea>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="memory.attackType == 3">
+              <p>
+                状态等级 {{ battleLvStatus() }} |
+                <button
+                  class="w3-button w3-light-gray"
+                  @click="memoryStatus.dicerollD += spellModifierStatus()"
                 >
-                + 命中
-                <span
-                  style="font-weight: bold; font-size: larger"
-                  :style="{ color: valueToColor(-accuracyAdvance()) }"
-                  >{{ accuracyAdvance() }}</span
-                >
-                + 其他调整值
-                <vue-number-input
-                  v-model="memory.dicerollD"
-                  size="medium"
-                  inline
-                  center
-                  controls
-                  :step="1"
-                />
-                =
-                <span
-                  class="w3-right"
-                  style="margin-top: 0.3em; font-size: larger; font-weight: bold"
-                  :style="{ color: valueToColor(-memory.dicerollD) }"
-                  >{{ attackDiceroll() }} ({{ attackDicerollPercentage() }}%)</span
-                >
+                  {{ memoryStatus.spellMod }}：{{ spellModifierStatus() }}
+                </button>
+                ，DC
+                {{ memory.attacker.getMoveDC(currentMove().name) }}
               </p>
+              <div v-if="memory.defender != null">
+                <p>无装备{{ memoryStatus.damageDefense }} {{ damageDefenseStatus() }}</p>
+                <p>
+                  伤害修正：{{
+                    memory.defender.typeMdf(memoryStatus.damageType) +
+                    memory.defender.typeMdf(memoryStatus.damageAspect)
+                  }}
+                  <span
+                    v-if="
+                      envTypeMdfTotal(
+                        [memoryStatus.damageType, memoryStatus.damageAspect],
+                        memory.attacker
+                      ) != 0
+                    "
+                  >
+                    + 天气场地
+                    {{
+                      envTypeMdfTotal(
+                        [memoryStatus.damageType, memoryStatus.damageAspect],
+                        memory.attacker
+                      ).toFixed(1)
+                    }}
+                  </span>
+                  +
+                  <vue-number-input
+                    v-model="memoryStatus.damageMdfD"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="0.1"
+                  />
+                  =
+                  <span
+                    v-if="memoryStatus.customDamage <= 0"
+                    style="margin-top: 0.3em; font-size: larger; font-weight: bold"
+                    :style="{ color: valueToColor(-damageMdfStatus()) }"
+                  >
+                    {{ damageMdfStatus().toFixed(1) }}</span
+                  >
+                </p>
+
+                <p class="battlepage-item">
+                  伤害掷骰
+                  <button
+                    class="w3-button"
+                    :class="{ 'w3-black': !memoryStatus.enableCT }"
+                    @click="toggleStatusEnableCT"
+                  >
+                    {{ memoryStatus.enableCT ? '启用暴击' : '禁用暴击' }}
+                  </button>
+                  <vue-number-input
+                    v-model="memoryStatus.ctLimit"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                    :min="1"
+                    :max="20"
+                  />
+                  <button
+                    class="w3-button"
+                    :class="{ 'w3-black': !memoryStatus.enableMiss }"
+                    @click="toggleStatusEnableMiss"
+                  >
+                    {{ memoryStatus.enableMiss ? '启用大失败' : '禁用大失败' }}
+                  </button>
+                  优劣势
+                  <vue-number-input
+                    v-model="memoryStatus.advantageDelta"
+                    size="small"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                  />
+                  <button class="w3-button" @click="rollStatusd20">投掷伤害掷骰</button
+                  >{{ memoryStatus.diceroll != 10 ? ' （* 状态的伤害掷骰一般总为 10）' : '' }}：
+                </p>
+                <p class="battlepage-item">
+                  原始值
+                  <vue-number-input
+                    :model-value="memoryStatus.diceroll"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                    :min="1"
+                    :max="20"
+                    @update:model-value="(v: number) => modifyWorldlineMemory(memoryStatus, v)"
+                  />
+                  + 其他调整值
+                  <vue-number-input
+                    v-model="memoryStatus.dicerollD"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                  />
+                  =
+                  <span
+                    class="w3-right"
+                    style="margin-top: 0.3em; font-size: larger; font-weight: bold"
+                    :style="{ color: valueToColor(-memoryStatus.dicerollD) }"
+                  >
+                    {{ statusDiceroll() }} ({{ statusDicerollPercentage() }}%)</span
+                  >
+                </p>
+
+                <div v-if="currentPower().elemType != '治疗' && currentPower().elemType != '护盾'">
+                  <p class="battlepage-item">
+                    <a style="font-size: x-large">状态伤害：{{ statusCalc(false) }}</a>
+                    <button class="w3-button w3-center" @click="copyStatusMessageToClipboard">
+                      复制到剪贴板
+                    </button>
+                    <button class="w3-button w3-center w3-red w3-right" @click="applyStatusResult">
+                      应用更改
+                    </button>
+                  </p>
+
+                  <textarea
+                    data-autosize
+                    style="width: 100%; height: calc(100vh - 43em); resize: none"
+                    :value="statusMessage()"
+                  ></textarea>
+                </div>
+
+                <div v-if="currentPower().elemType == '治疗'">
+                  <p class="battlepage-item">
+                    <a style="font-size: x-large">治疗：{{ statusCalc(true) }}</a>
+                    <button class="w3-button w3-center" @click="copyHealStatusMessageToClipboard">
+                      复制到剪贴板
+                    </button>
+                    <button
+                      class="w3-button w3-center w3-red w3-right"
+                      @click="applyHealStatusResult"
+                    >
+                      应用更改
+                    </button>
+                  </p>
+
+                  <textarea
+                    data-autosize
+                    style="width: 100%; height: calc(100vh - 43em); resize: none"
+                    :value="healStatusMessage()"
+                  ></textarea>
+                </div>
+
+                <div v-if="currentPower().elemType == '护盾'">
+                  <p class="battlepage-item">
+                    <a style="font-size: x-large">获得护盾：{{ statusCalc(true) }}</a>
+                    <button
+                      class="w3-button w3-center"
+                      @click="copyHealShieldStatusMessageToClipboard"
+                    >
+                      复制到剪贴板
+                    </button>
+                    <button
+                      class="w3-button w3-center w3-red w3-right"
+                      @click="applyHealShieldStatusResult"
+                    >
+                      应用更改
+                    </button>
+                  </p>
+
+                  <textarea
+                    data-autosize
+                    style="width: 100%; height: calc(100vh - 43em); resize: none"
+                    :value="healShieldStatusMessage()"
+                  ></textarea>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="memory.attackType == 0">
               <p class="battlepage-item">
-                <a style="font-size: x-large">伤害：{{ damageCalc() }}</a>
-                <button class="w3-button w3-center" @click="copyAttackMessageToClipboard">
+                <button class="w3-button w3-center" @click="copyNullMessageToClipboard">
                   复制到剪贴板
                 </button>
-                <button class="w3-button w3-center w3-blue w3-right" @click="applyAttackResult">
+                <button class="w3-button w3-center w3-red w3-right" @click="applyNullResult">
                   应用更改
                 </button>
               </p>
+
               <textarea
                 data-autosize
                 style="width: 100%; height: calc(100vh - 43em); resize: none"
-                :value="attackMessage()"
+                :value="nullMessage()"
               ></textarea>
             </div>
-          </div>
-          <div v-if="memory.attackType == 2">
-            <p>
-              {{ memoryHeal.spellType }}：属性一致加成 {{ spellTypeStabHeal() }} |
+
+            <div>
               <button
+                v-if="memory.defender != null && memory.attackType == 1"
                 class="w3-button w3-light-gray"
-                @click="memoryHeal.dicerollD += spellModifierHeal()"
+                style="width: 14%"
+                @click="
+                  toggleSurviveMemory(
+                    memory.defender.code(),
+                    '专注',
+                    1,
+                    memory.defender.concentrationSaveFromDamage(damageCalc())
+                  )
+                "
               >
-                {{ memoryHeal.spellMod }}：{{ spellModifierHeal() }}
+                专注豁免 {{ memory.defender.concentrationSaveFromDamage(damageCalc()) }}
               </button>
-              ，DC
-              {{ memory.attacker.getMoveDC(currentMove().name) }}
-            </p>
-            <div v-if="memory.defender != null">
-              <p>
-                治疗：{{ memoryHeal.spellAttack }} {{ spellAttackHeal() }} | 护盾：{{
-                  memoryHeal.spellAttackShield
-                }}
-                {{ spellAttackHealShield() }}
-              </p>
-              <p class="battlepage-item">
-                伤害修正：
-                <vue-number-input
-                  v-model="memoryHeal.damageMdfD"
-                  size="medium"
-                  inline
-                  center
-                  controls
-                  :step="0.1"
-                />
-                =
-                <span
-                  style="margin-top: 0.3em; font-size: larger; font-weight: bold"
-                  :style="{ color: valueToColor(-healMdf()) }"
-                  >{{ healMdf().toFixed(1) }}</span
-                >
-              </p>
-              <p class="battlepage-item">
-                招式掷骰
-                <button
-                  class="w3-button"
-                  :class="{ 'w3-black': !memoryHeal.enableCT }"
-                  @click="toggleEnableCT"
-                >
-                  {{ memoryHeal.enableCT ? '启用暴击' : '禁用暴击' }}
-                </button>
-                <vue-number-input
-                  v-model="memoryHeal.ctLimit"
-                  size="medium"
-                  inline
-                  center
-                  controls
-                  :step="1"
-                  :min="1"
-                  :max="20"
-                />
-                <button
-                  class="w3-button"
-                  :class="{ 'w3-black': !memoryHeal.enableMiss }"
-                  @click="toggleEnableMiss"
-                >
-                  {{ memoryHeal.enableMiss ? '启用大失败' : '禁用大失败' }}
-                </button>
-                优劣势
-                <vue-number-input
-                  v-model="memoryHeal.advantageDelta"
-                  size="small"
-                  inline
-                  center
-                  controls
-                  :step="1"
-                />
-                <button class="w3-button" @click="rollHeald20">投掷攻击掷骰</button>：
-              </p>
-              <p class="battlepage-item">
-                原始值
-                <vue-number-input
-                  :model-value="memoryHeal.diceroll"
-                  size="medium"
-                  inline
-                  center
-                  controls
-                  :step="1"
-                  :min="1"
-                  :max="20"
-                  @update:model-value="(v: number) => modifyWorldlineMemory(memoryHeal, v)"
-                />
-                + 加值
-                <span
-                  style="font-weight: bold; font-size: larger"
-                  :style="{ color: valueToColor(-spellModifierHeal()) }"
-                  >{{ spellModifierHeal() }}</span
-                >
-                + 其他调整值
-                <vue-number-input
-                  v-model="memoryHeal.dicerollD"
-                  size="medium"
-                  inline
-                  center
-                  controls
-                  :step="1"
-                />
-                =
-                <span
-                  class="w3-right"
-                  style="margin-top: 0.3em; font-size: larger; font-weight: bold"
-                  :style="{ color: valueToColor(-memoryHeal.dicerollD) }"
-                  >{{ healDiceroll() }} ({{ healDicerollPercentage() }}%)</span
-                >
-              </p>
-              <div v-if="currentPower().elemType == '治疗'">
-                <p class="battlepage-item">
-                  <a style="font-size: x-large">治疗：{{ healCalc() }}</a>
-                  <button class="w3-button w3-center" @click="copyHealMessageToClipboard">
-                    复制到剪贴板
-                  </button>
-                  <button
-                    class="w3-button w3-center w3-right"
-                    :class="{
-                      'w3-red': memory.defender.currentHP != memory.defender.maxHP(),
-                      'w3-blue': memory.defender.currentHP == memory.defender.maxHP()
-                    }"
-                    @click="applyHealResult"
-                  >
-                    应用更改
-                  </button>
-                </p>
-
-                <textarea
-                  data-autosize
-                  style="width: 100%; height: calc(100vh - 43em); resize: none"
-                  :value="healMessage()"
-                ></textarea>
-              </div>
-              <div v-if="currentPower().elemType == '护盾'">
-                <p class="battlepage-item">
-                  <a style="font-size: x-large">获得护盾：{{ healShieldCalc() }}</a>
-                  <button class="w3-button w3-center" @click="copyHealShieldMessageToClipboard">
-                    复制到剪贴板
-                  </button>
-                  护盾的来源只能有一个
-                  <button
-                    class="w3-button w3-center w3-red w3-right"
-                    @click="applyHealShieldResult"
-                  >
-                    应用更改
-                  </button>
-                </p>
-
-                <textarea
-                  data-autosize
-                  style="width: 100%; height: calc(100vh - 43em); resize: none"
-                  :value="healShieldMessage()"
-                ></textarea>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="memory.attackType == 3">
-            <p>
-              状态等级 {{ battleLvStatus() }} |
               <button
+                v-if="memory.defender != null && memory.attackType == 3"
                 class="w3-button w3-light-gray"
-                @click="memoryStatus.dicerollD += spellModifierStatus()"
+                style="width: 14%"
+                @click="
+                  toggleSurviveMemory(
+                    memory.defender.code(),
+                    '专注',
+                    1,
+                    memory.defender.concentrationSaveFromDamage(statusCalc(false))
+                  )
+                "
               >
-                {{ memoryStatus.spellMod }}：{{ spellModifierStatus() }}
+                专注豁免 {{ memory.defender.concentrationSaveFromDamage(statusCalc(false)) }}
               </button>
-              ，DC
-              {{ memory.attacker.getMoveDC(currentMove().name) }}
-            </p>
-            <div v-if="memory.defender != null">
-              <p>无装备{{ memoryStatus.damageDefense }} {{ damageDefenseStatus() }}</p>
-              <p>
-                伤害修正：{{
-                  memory.defender.typeMdf(memoryStatus.damageType) +
-                  memory.defender.typeMdf(memoryStatus.damageAspect)
-                }}
-                <span
-                  v-if="
-                    envTypeMdfTotal(
-                      [memoryStatus.damageType, memoryStatus.damageAspect],
-                      memory.attacker
-                    ) != 0
-                  "
-                >
-                  + 天气场地
-                  {{
-                    envTypeMdfTotal(
-                      [memoryStatus.damageType, memoryStatus.damageAspect],
-                      memory.attacker
-                    ).toFixed(1)
-                  }}
-                </span>
-                +
-                <vue-number-input
-                  v-model="memoryStatus.damageMdfD"
-                  size="medium"
-                  inline
-                  center
-                  controls
-                  :step="0.1"
-                />
-                =
-                <span
-                  v-if="memoryStatus.customDamage <= 0"
-                  style="margin-top: 0.3em; font-size: larger; font-weight: bold"
-                  :style="{ color: valueToColor(-damageMdfStatus()) }"
-                >
-                  {{ damageMdfStatus().toFixed(1) }}</span
-                >
-              </p>
-
-              <p class="battlepage-item">
-                伤害掷骰
-                <button
-                  class="w3-button"
-                  :class="{ 'w3-black': !memoryStatus.enableCT }"
-                  @click="toggleStatusEnableCT"
-                >
-                  {{ memoryStatus.enableCT ? '启用暴击' : '禁用暴击' }}
-                </button>
-                <vue-number-input
-                  v-model="memoryStatus.ctLimit"
-                  size="medium"
-                  inline
-                  center
-                  controls
-                  :step="1"
-                  :min="1"
-                  :max="20"
-                />
-                <button
-                  class="w3-button"
-                  :class="{ 'w3-black': !memoryStatus.enableMiss }"
-                  @click="toggleStatusEnableMiss"
-                >
-                  {{ memoryStatus.enableMiss ? '启用大失败' : '禁用大失败' }}
-                </button>
-                优劣势
-                <vue-number-input
-                  v-model="memoryStatus.advantageDelta"
-                  size="small"
-                  inline
-                  center
-                  controls
-                  :step="1"
-                />
-                <button class="w3-button" @click="rollStatusd20">投掷伤害掷骰</button
-                >{{ memoryStatus.diceroll != 10 ? ' （* 状态的伤害掷骰一般总为 10）' : '' }}：
-              </p>
-              <p class="battlepage-item">
-                原始值
-                <vue-number-input
-                  :model-value="memoryStatus.diceroll"
-                  size="medium"
-                  inline
-                  center
-                  controls
-                  :step="1"
-                  :min="1"
-                  :max="20"
-                  @update:model-value="(v: number) => modifyWorldlineMemory(memoryStatus, v)"
-                />
-                + 其他调整值
-                <vue-number-input
-                  v-model="memoryStatus.dicerollD"
-                  size="medium"
-                  inline
-                  center
-                  controls
-                  :step="1"
-                />
-                =
-                <span
-                  class="w3-right"
-                  style="margin-top: 0.3em; font-size: larger; font-weight: bold"
-                  :style="{ color: valueToColor(-memoryStatus.dicerollD) }"
-                >
-                  {{ statusDiceroll() }} ({{ statusDicerollPercentage() }}%)</span
-                >
-              </p>
-
-              <div v-if="currentPower().elemType != '治疗' && currentPower().elemType != '护盾'">
-                <p class="battlepage-item">
-                  <a style="font-size: x-large">状态伤害：{{ statusCalc(false) }}</a>
-                  <button class="w3-button w3-center" @click="copyStatusMessageToClipboard">
-                    复制到剪贴板
-                  </button>
-                  <button class="w3-button w3-center w3-red w3-right" @click="applyStatusResult">
-                    应用更改
-                  </button>
-                </p>
-
-                <textarea
-                  data-autosize
-                  style="width: 100%; height: calc(100vh - 43em); resize: none"
-                  :value="statusMessage()"
-                ></textarea>
-              </div>
-
-              <div v-if="currentPower().elemType == '治疗'">
-                <p class="battlepage-item">
-                  <a style="font-size: x-large">治疗：{{ statusCalc(true) }}</a>
-                  <button class="w3-button w3-center" @click="copyHealStatusMessageToClipboard">
-                    复制到剪贴板
-                  </button>
-                  <button
-                    class="w3-button w3-center w3-red w3-right"
-                    @click="applyHealStatusResult"
-                  >
-                    应用更改
-                  </button>
-                </p>
-
-                <textarea
-                  data-autosize
-                  style="width: 100%; height: calc(100vh - 43em); resize: none"
-                  :value="healStatusMessage()"
-                ></textarea>
-              </div>
-
-              <div v-if="currentPower().elemType == '护盾'">
-                <p class="battlepage-item">
-                  <a style="font-size: x-large">获得护盾：{{ statusCalc(true) }}</a>
-                  <button
-                    class="w3-button w3-center"
-                    @click="copyHealShieldStatusMessageToClipboard"
-                  >
-                    复制到剪贴板
-                  </button>
-                  <button
-                    class="w3-button w3-center w3-red w3-right"
-                    @click="applyHealShieldStatusResult"
-                  >
-                    应用更改
-                  </button>
-                </p>
-
-                <textarea
-                  data-autosize
-                  style="width: 100%; height: calc(100vh - 43em); resize: none"
-                  :value="healShieldStatusMessage()"
-                ></textarea>
-              </div>
+              <button
+                v-if="memory.defender != null"
+                class="w3-button w3-light-gray"
+                style="width: 14%"
+                @click="toggleSurviveMemory(memory.defender.code(), '力量', 1, currentDC())"
+              >
+                力量豁免 {{ currentDC() }}
+              </button>
+              <button
+                v-if="memory.defender != null"
+                class="w3-button w3-light-gray"
+                style="width: 14%"
+                @click="toggleSurviveMemory(memory.defender.code(), '敏捷', 1, currentDC())"
+              >
+                敏捷豁免 {{ currentDC() }}
+              </button>
+              <button
+                v-if="memory.defender != null"
+                class="w3-button w3-light-gray"
+                style="width: 14%"
+                @click="toggleSurviveMemory(memory.defender.code(), '体质', 1, currentDC())"
+              >
+                体质豁免 {{ currentDC() }}
+              </button>
+              <button
+                v-if="memory.defender != null"
+                class="w3-button w3-light-gray"
+                style="width: 14%"
+                @click="toggleSurviveMemory(memory.defender.code(), '智力', 1, currentDC())"
+              >
+                智力豁免 {{ currentDC() }}
+              </button>
+              <button
+                v-if="memory.defender != null"
+                class="w3-button w3-light-gray"
+                style="width: 14%"
+                @click="toggleSurviveMemory(memory.defender.code(), '感知', 1, currentDC())"
+              >
+                感知豁免 {{ currentDC() }}
+              </button>
+              <button
+                v-if="memory.defender != null"
+                class="w3-button w3-light-gray"
+                style="width: 14%"
+                @click="toggleSurviveMemory(memory.defender.code(), '魅力', 1, currentDC())"
+              >
+                魅力豁免 {{ currentDC() }}
+              </button>
             </div>
-          </div>
 
-          <div v-if="memory.attackType == 0">
-            <p class="battlepage-item">
-              <button class="w3-button w3-center" @click="copyNullMessageToClipboard">
-                复制到剪贴板
-              </button>
-              <button class="w3-button w3-center w3-red w3-right" @click="applyNullResult">
-                应用更改
-              </button>
+            <p
+              v-if="envEffectIntensity(memory.spellType, memory.attacker) != 0"
+              class="battlepage-item"
+              style="font-size: small; color: gray"
+            >
+              环境效应强度 {{ memory.spellType }}
+              {{ envEffectIntensity(memory.spellType, memory.attacker) > 0 ? '+' : ''
+              }}{{ envEffectIntensity(memory.spellType, memory.attacker) }}
             </p>
 
-            <textarea
-              data-autosize
-              style="width: 100%; height: calc(100vh - 43em); resize: none"
-              :value="nullMessage()"
-            ></textarea>
-          </div>
-
-          <div>
-            <button
-              v-if="memory.defender != null && memory.attackType == 1"
-              class="w3-button w3-light-gray"
-              style="width: 14%"
-              @click="
-                toggleSurviveMemory(
-                  memory.defender.code(),
-                  '专注',
-                  1,
-                  memory.defender.concentrationSaveFromDamage(damageCalc())
-                )
-              "
-            >
-              专注豁免 {{ memory.defender.concentrationSaveFromDamage(damageCalc()) }}
-            </button>
-            <button
-              v-if="memory.defender != null && memory.attackType == 3"
-              class="w3-button w3-light-gray"
-              style="width: 14%"
-              @click="
-                toggleSurviveMemory(
-                  memory.defender.code(),
-                  '专注',
-                  1,
-                  memory.defender.concentrationSaveFromDamage(statusCalc(false))
-                )
-              "
-            >
-              专注豁免 {{ memory.defender.concentrationSaveFromDamage(statusCalc(false)) }}
-            </button>
-            <button
-              v-if="memory.defender != null"
-              class="w3-button w3-light-gray"
-              style="width: 14%"
-              @click="toggleSurviveMemory(memory.defender.code(), '力量', 1, currentDC())"
-            >
-              力量豁免 {{ currentDC() }}
-            </button>
-            <button
-              v-if="memory.defender != null"
-              class="w3-button w3-light-gray"
-              style="width: 14%"
-              @click="toggleSurviveMemory(memory.defender.code(), '敏捷', 1, currentDC())"
-            >
-              敏捷豁免 {{ currentDC() }}
-            </button>
-            <button
-              v-if="memory.defender != null"
-              class="w3-button w3-light-gray"
-              style="width: 14%"
-              @click="toggleSurviveMemory(memory.defender.code(), '体质', 1, currentDC())"
-            >
-              体质豁免 {{ currentDC() }}
-            </button>
-            <button
-              v-if="memory.defender != null"
-              class="w3-button w3-light-gray"
-              style="width: 14%"
-              @click="toggleSurviveMemory(memory.defender.code(), '智力', 1, currentDC())"
-            >
-              智力豁免 {{ currentDC() }}
-            </button>
-            <button
-              v-if="memory.defender != null"
-              class="w3-button w3-light-gray"
-              style="width: 14%"
-              @click="toggleSurviveMemory(memory.defender.code(), '感知', 1, currentDC())"
-            >
-              感知豁免 {{ currentDC() }}
-            </button>
-            <button
-              v-if="memory.defender != null"
-              class="w3-button w3-light-gray"
-              style="width: 14%"
-              @click="toggleSurviveMemory(memory.defender.code(), '魅力', 1, currentDC())"
-            >
-              魅力豁免 {{ currentDC() }}
-            </button>
-          </div>
-
-          <p
-            v-if="envEffectIntensity(memory.spellType, memory.attacker) != 0"
-            class="battlepage-item"
-            style="font-size: small; color: gray"
-          >
-            环境效应强度 {{ memory.spellType }}
-            {{ envEffectIntensity(memory.spellType, memory.attacker) > 0 ? '+' : ''
-            }}{{ envEffectIntensity(memory.spellType, memory.attacker) }}
-          </p>
-
-          <div style="display: flex; flex-direction: column">
-            <textarea
-              id="logs"
-              v-model="currentMove().description"
-              data-autosize
-              spellcheck="false"
-              style="
-                width: 100%;
-                height: calc(100vh - 28em);
-                resize: vertical;
-                box-sizing: border-box;
-              "
-            ></textarea>
+            <div style="display: flex; flex-direction: column">
+              <textarea
+                id="logs"
+                v-model="currentMove().description"
+                data-autosize
+                spellcheck="false"
+                style="
+                  width: 100%;
+                  height: calc(100vh - 28em);
+                  resize: vertical;
+                  box-sizing: border-box;
+                "
+              ></textarea>
+            </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
   </div>
 </template>
 

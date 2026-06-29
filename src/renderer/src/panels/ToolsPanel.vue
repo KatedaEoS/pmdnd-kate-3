@@ -180,7 +180,9 @@ const lunarYesterday = computed(() => getLunarPhase(lastDay(memory.value.selecte
 const lunarToday = computed(() => getLunarPhase(memory.value.selectedDate))
 const lunarFuture = computed(() =>
   getLunarPhasesSequence(
-    new Date(new Date(memory.value.selectedDate).setDate(new Date(memory.value.selectedDate).getDate() + 1))
+    new Date(
+      new Date(memory.value.selectedDate).setDate(new Date(memory.value.selectedDate).getDate() + 1)
+    )
       .toISOString()
       .split('T')[0],
     7
@@ -368,8 +370,7 @@ function formatLocalDate(dateString: string): string {
           <div
             class="lunar-phase-box"
             :style="{
-              backgroundColor:
-                LUNAR_PHASE_STYLES[lunarYesterday.phase].bgColor,
+              backgroundColor: LUNAR_PHASE_STYLES[lunarYesterday.phase].bgColor,
               color: LUNAR_PHASE_STYLES[lunarYesterday.phase].color
             }"
             title="昨日"
@@ -377,10 +378,7 @@ function formatLocalDate(dateString: string): string {
             <span class="lunar-phase-text"
               >{{ lunarYesterday.phase }}
               <br v-if="lunarYesterday.eventTime" />
-              <span
-                v-if="lunarYesterday.eventTime"
-                class="lunar-phase-time"
-              >
+              <span v-if="lunarYesterday.eventTime" class="lunar-phase-time">
                 ({{ formatTime(lunarYesterday.eventTime) }})
               </span></span
             >
@@ -515,23 +513,19 @@ function formatLocalDate(dateString: string): string {
       </p>
       <br />
       <p>
-        服装：共计 {{ armorClothing[0] }}% 的提升：比如
-        {{ armorClothing[1] }}% 物防和
+        服装：共计 {{ armorClothing[0] }}% 的提升：比如 {{ armorClothing[1] }}% 物防和
         {{ armorClothing[2] }}% 特防
       </p>
       <p>
-        轻甲：共计 {{ armorLight[0] }}% 的提升：比如
-        {{ armorLight[1] }}% 物防和
+        轻甲：共计 {{ armorLight[0] }}% 的提升：比如 {{ armorLight[1] }}% 物防和
         {{ armorLight[2] }}% 特防
       </p>
       <p>
-        中甲：共计 {{ armorMedium[0] }}% 的提升：比如
-        {{ armorMedium[1] }}% 物防和
+        中甲：共计 {{ armorMedium[0] }}% 的提升：比如 {{ armorMedium[1] }}% 物防和
         {{ armorMedium[2] }}% 特防
       </p>
       <p>
-        重甲：共计 {{ armorHeavy[0] }}% 的提升：比如
-        {{ armorHeavy[1] }}% 物防和
+        重甲：共计 {{ armorHeavy[0] }}% 的提升：比如 {{ armorHeavy[1] }}% 物防和
         {{ armorHeavy[2] }}% 特防
       </p>
       <p>
@@ -546,9 +540,8 @@ function formatLocalDate(dateString: string): string {
         />
       </p>
       <p>
-        自定义护甲：共计 {{ armorCustom[0] }}%
-        的提升：比如 {{ armorCustom[1] }}%
-        物防和 {{ armorCustom[2] }}% 特防
+        自定义护甲：共计 {{ armorCustom[0] }}% 的提升：比如 {{ armorCustom[1] }}% 物防和
+        {{ armorCustom[2] }}% 特防
       </p>
     </div>
 
@@ -701,11 +694,7 @@ function formatLocalDate(dateString: string): string {
               {{ normalized.bValues[idx].toFixed(2) }}
             </td>
             <td>
-              {{
-                normalized
-                  .bValues.reduce((s, v) => s + v, 0)
-                  .toFixed(1)
-              }}
+              {{ normalized.bValues.reduce((s, v) => s + v, 0).toFixed(1) }}
             </td>
           </tr>
           <tr>
@@ -753,8 +742,7 @@ function formatLocalDate(dateString: string): string {
         </tbody>
       </table>
       <p>
-        标准差 = {{ normalized.stdDev.toFixed(2) }}，基准值 =
-        {{ normalized.base }}，剩余点数 =
+        标准差 = {{ normalized.stdDev.toFixed(2) }}，基准值 = {{ normalized.base }}，剩余点数 =
         {{ 600 - normalized.base * 6 }}
       </p>
       <div

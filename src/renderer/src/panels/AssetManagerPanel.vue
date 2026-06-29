@@ -19,7 +19,8 @@ const usageLabels: Record<MapAssetUsage, string> = {
   unused: '仅入库',
   token: 'Token',
   background: '背景',
-  both: '背景 + Token'
+  both: '背景 + Token',
+  portrait: '角色立绘'
 }
 
 normalizeMapAssets(mm)
@@ -155,6 +156,7 @@ function saveCurrentSettings(asset: MapAsset): void {
                 <option value="token">Token</option>
                 <option value="background">背景</option>
                 <option value="both">背景 + Token</option>
+                <option value="portrait">角色立绘</option>
               </select>
             </label>
           </div>

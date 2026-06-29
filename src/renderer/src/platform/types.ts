@@ -20,9 +20,7 @@ export interface AppAPI {
     updatedAt?: number
     message?: string
   }>
-  quickLoad: (
-    slot?: number
-  ) => Promise<{
+  quickLoad: (slot?: number) => Promise<{
     success: boolean
     data?: string
     fileName?: string

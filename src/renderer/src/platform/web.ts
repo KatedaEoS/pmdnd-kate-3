@@ -15,8 +15,10 @@ function downloadFile(data: string, filename: string): void {
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 function alertQuota(): void {
@@ -25,6 +27,15 @@ function alertQuota(): void {
       '请清理部分快速存档，或使用「存档到文件」将存档导出为 JSON 文件。\n' +
       '菜单：存档 → 删除快速存档'
   )
+}
+
+function trySaveLatest(data: string): boolean {
+  try {
+    localStorage.setItem(STORAGE_KEY, data)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function saveCharacterCount(data: string | null): number | undefined {
@@ -44,12 +55,23 @@ function utf8Size(data: string | null): number | undefined {
 export const webPlatform: AppAPI = {
   async saveState(data) {
     try {
-      localStorage.setItem(STORAGE_KEY, data)
-    } catch {
-      alertQuota()
-      return { success: false, message: 'localStorage 容量已满' }
+      downloadFile(data, `pmdnd-${timestamp()}.json`)
+    } catch (error) {
+      return { success: false, message: `存档文件导出失败：${String(error)}` }
     }
-    downloadFile(data, `pmdnd-${timestamp()}.json`)
+
+    if (!trySaveLatest(data)) {
+      alert(
+        '存档文件已开始下载，但 localStorage 容量已满。\n\n' +
+          '浏览器内的“最新存档”未能更新。请确认文件已保存，然后清理部分快速存档。\n' +
+          '菜单：存档 → 删除快速存档'
+      )
+      return {
+        success: true,
+        message: '文件已导出，但 localStorage 容量已满，未更新浏览器内最新存档'
+      }
+    }
+
     return { success: true }
   },
 

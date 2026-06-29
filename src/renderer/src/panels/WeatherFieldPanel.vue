@@ -2,11 +2,7 @@
 import { ref, computed, nextTick, onMounted } from 'vue'
 import VueNumberInput from '@chenfengyuan/vue-number-input'
 import type { IDockviewPanelProps } from 'dockview-core'
-import {
-  ClimateStates,
-  WeatherStates,
-  getEnvState
-} from '@renderer/model/WeatherField'
+import { ClimateStates, WeatherStates, getEnvState } from '@renderer/model/WeatherField'
 import {
   envMemory,
   envEffectIntensity,
@@ -222,210 +218,214 @@ function applyMovePower(mp: MovePower): void {
           {{ item.name }} {{ item.layers }}层
         </span>
       </div>
-      <div v-if="activeWeather.length == 0 && activeClimate.length == 0" class="weather-summary-empty">
+      <div
+        v-if="activeWeather.length == 0 && activeClimate.length == 0"
+        class="weather-summary-empty"
+      >
         无活跃天气或基本气候
       </div>
     </div>
 
     <template v-else>
-    <!-- ── 天气 ── -->
-    <h3>天气</h3>
-    <div style="display: flex; flex-wrap: wrap; gap: 0.5em; margin-bottom: 1em">
-      <div
-        v-for="ws in WeatherStates"
-        :key="ws.name"
-        class="w3-padding-small"
-        :class="{ 'w3-light-gray': weatherLayers(ws.name) > 0 }"
-        style="min-width: 14em"
-      >
-        <span style="font-weight: bold">{{ ws.name }}</span>
-        <div style="display: flex; align-items: center; gap: 0.3em; margin-top: 0.3em">
+      <!-- ── 天气 ── -->
+      <div style="display: flex; flex-wrap: wrap; gap: 0.5em; margin-bottom: 1em">
+        <div
+          v-for="ws in WeatherStates"
+          :key="ws.name"
+          class="w3-padding-small"
+          :class="{ 'w3-light-gray': weatherLayers(ws.name) > 0 }"
+          style="min-width: 14em"
+        >
+          <span style="font-weight: bold">{{ ws.name }}</span>
+          <div style="display: flex; align-items: center; gap: 0.3em; margin-top: 0.3em">
+            <button
+              class="w3-button w3-tiny w3-border"
+              @click="setWeather(ws.name, weatherLayers(ws.name) - 5)"
+            >
+              -5
+            </button>
+            <button
+              class="w3-button w3-tiny w3-border"
+              @click="setWeather(ws.name, weatherLayers(ws.name) - 1)"
+            >
+              -1
+            </button>
+            <vue-number-input
+              :model-value="weatherLayers(ws.name)"
+              size="small"
+              inline
+              center
+              :min="0"
+              :step="5"
+              @update:model-value="(v: number) => setWeather(ws.name, v)"
+            />
+            <button
+              class="w3-button w3-tiny w3-border"
+              @click="setWeather(ws.name, weatherLayers(ws.name) + 1)"
+            >
+              +1
+            </button>
+            <button
+              class="w3-button w3-tiny w3-border"
+              @click="setWeather(ws.name, weatherLayers(ws.name) + 5)"
+            >
+              +5
+            </button>
+            层
+          </div>
+          <div style="font-size: small; color: gray">
+            导出：{{ ws.exports.join('、') || '无' }}
+            <span v-if="ws.damageOnTurn.length > 0"> | 伤害</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 基本气候 ── -->
+      <strong>基本气候</strong>
+      <div style="margin-bottom: 1em">
+        <div
+          v-for="[plus, minus, label] in [
+            ['强烈光照', '光照不足', '光照'],
+            ['气温上升', '气温下降', '气温'],
+            ['湿度上升', '湿度下降', '湿度'],
+            ['气压上升', '起风', '气压']
+          ]"
+          :key="label"
+          class="w3-padding-small"
+          :class="climateEffective(plus) > 0 || climateEffective(minus) > 0 ? 'w3-light-gray' : ''"
+          style="margin-bottom: 0.3em; display: flex; align-items: center; gap: 0.4em"
+        >
+          <span style="font-weight: bold">{{ label }}</span>
+
           <button
-            class="w3-button w3-tiny w3-border"
-            @click="setWeather(ws.name, weatherLayers(ws.name) - 5)"
+            class="w3-button w3-tiny w3-border w3-red"
+            style="padding: 0 6px; min-width: 28px"
+            @click="setClimateBase(minus, climateBase(minus) + 5)"
           >
             -5
           </button>
           <button
-            class="w3-button w3-tiny w3-border"
-            @click="setWeather(ws.name, weatherLayers(ws.name) - 1)"
+            class="w3-button w3-tiny w3-border w3-red"
+            style="padding: 0 6px; min-width: 28px"
+            @click="setClimateBase(minus, climateBase(minus) + 1)"
           >
             -1
           </button>
-          <vue-number-input
-            :model-value="weatherLayers(ws.name)"
-            size="small"
-            inline
-            center
-            :min="0"
-            :step="5"
-            @update:model-value="(v: number) => setWeather(ws.name, v)"
-          />
           <button
-            class="w3-button w3-tiny w3-border"
-            @click="setWeather(ws.name, weatherLayers(ws.name) + 1)"
+            class="w3-button w3-tiny w3-border w3-green"
+            style="padding: 0 6px; min-width: 28px"
+            @click="setClimateBase(plus, climateBase(plus) + 1)"
           >
             +1
           </button>
           <button
-            class="w3-button w3-tiny w3-border"
-            @click="setWeather(ws.name, weatherLayers(ws.name) + 5)"
+            class="w3-button w3-tiny w3-border w3-green"
+            style="padding: 0 6px; min-width: 28px"
+            @click="setClimateBase(plus, climateBase(plus) + 5)"
           >
             +5
           </button>
-          层
-        </div>
-        <div style="font-size: small; color: gray">
-          导出：{{ ws.exports.join('、') || '无' }}
-          <span v-if="ws.damageOnTurn.length > 0"> | 伤害</span>
+
+          <span v-if="climateEffective(plus) > 0">
+            <span style="color: #4caf50; font-weight: bold"
+              >{{ plus }} {{ climateEffective(plus) }}</span
+            >
+          </span>
+          <span v-if="climateEffective(minus) > 0">
+            <span style="color: #e53935; font-weight: bold"
+              >{{ minus }} {{ climateEffective(minus) }}</span
+            >
+          </span>
+          <span
+            v-if="climateBase(plus) > 0"
+            style="font-size: small; color: gray; margin-left: 0.3em"
+            >本底：{{ plus }} {{ climateBase(plus) }}</span
+          >
+          <span
+            v-if="climateBase(minus) > 0"
+            style="font-size: small; color: gray; margin-left: 0.3em"
+            >本底：{{ minus }} {{ climateBase(minus) }}</span
+          >
+          <div
+            v-for="h in activeHints(plus, climateEffective(plus)).concat(
+              activeHints(minus, climateEffective(minus))
+            )"
+            :key="h"
+            style="font-size: small; color: #2196f3; margin-left: 1em"
+          >
+            ! {{ h }}
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- ── 基本气候 ── -->
-    <h3>基本气候</h3>
-    <div style="margin-bottom: 1em">
+      <!-- ── 总元素修正 ── -->
+      <h3>环境元素伤害修正</h3>
       <div
-        v-for="[plus, minus, label] in [
-          ['强烈光照', '光照不足', '光照'],
-          ['气温上升', '气温下降', '气温'],
-          ['湿度上升', '湿度下降', '湿度'],
-          ['气压上升', '起风', '气压']
-        ]"
-        :key="label"
-        class="w3-padding-small"
-        :class="climateEffective(plus) > 0 || climateEffective(minus) > 0 ? 'w3-light-gray' : ''"
-        style="margin-bottom: 0.3em; display: flex; align-items: center; gap: 0.4em"
+        v-if="elementMods.length > 0"
+        style="display: flex; flex-wrap: wrap; gap: 0.4em; margin-bottom: 1em"
       >
-        <span style="font-weight: bold">{{ label }}</span>
-
-        <button
-          class="w3-button w3-tiny w3-border w3-red"
-          style="padding: 0 6px; min-width: 28px"
-          @click="setClimateBase(minus, climateBase(minus) + 5)"
-        >
-          -5
-        </button>
-        <button
-          class="w3-button w3-tiny w3-border w3-red"
-          style="padding: 0 6px; min-width: 28px"
-          @click="setClimateBase(minus, climateBase(minus) + 1)"
-        >
-          -1
-        </button>
-        <button
-          class="w3-button w3-tiny w3-border w3-green"
-          style="padding: 0 6px; min-width: 28px"
-          @click="setClimateBase(plus, climateBase(plus) + 1)"
-        >
-          +1
-        </button>
-        <button
-          class="w3-button w3-tiny w3-border w3-green"
-          style="padding: 0 6px; min-width: 28px"
-          @click="setClimateBase(plus, climateBase(plus) + 5)"
-        >
-          +5
-        </button>
-
-        <span v-if="climateEffective(plus) > 0">
-          <span style="color: #4caf50; font-weight: bold"
-            >{{ plus }} {{ climateEffective(plus) }}</span
-          >
-        </span>
-        <span v-if="climateEffective(minus) > 0">
-          <span style="color: #e53935; font-weight: bold"
-            >{{ minus }} {{ climateEffective(minus) }}</span
-          >
-        </span>
-        <span v-if="climateBase(plus) > 0" style="font-size: small; color: gray; margin-left: 0.3em"
-          >本底：{{ plus }} {{ climateBase(plus) }}</span
-        >
         <span
-          v-if="climateBase(minus) > 0"
-          style="font-size: small; color: gray; margin-left: 0.3em"
-          >本底：{{ minus }} {{ climateBase(minus) }}</span
+          v-for="mod in elementMods"
+          :key="mod.elem"
+          class="w3-tag"
+          :class="{ 'w3-red': mod.total < 0, 'w3-green': mod.total > 0 }"
         >
+          {{ mod.elem }} {{ mod.total > 0 ? '+' : '' }}{{ mod.total.toFixed(1) }}
+        </span>
+      </div>
+      <div v-else style="color: gray; margin-bottom: 1em">无活跃的环境状态</div>
+      <p style="font-size: small; color: gray">
+        全局天气和气候修正会自动计入伤害计算；地图场地按角色位置另行计算。
+      </p>
+
+      <!-- ── 环境效应强度 ── -->
+      <h3>环境效应强度（每 5 层 ±2）</h3>
+      <div
+        v-if="effectIntensities.length > 0"
+        style="display: flex; flex-wrap: wrap; gap: 0.4em; margin-bottom: 1em"
+      >
+        <span
+          v-for="ei in effectIntensities"
+          :key="ei.elem"
+          class="w3-tag"
+          :class="{ 'w3-red': ei.val < 0, 'w3-green': ei.val > 0 }"
+        >
+          {{ ei.elem }} {{ ei.val > 0 ? '+' : '' }}{{ ei.val }}
+        </span>
+      </div>
+      <div v-else style="color: gray; margin-bottom: 1em">无环境效应强度</div>
+      <p style="font-size: small; color: gray">
+        全局天气和气候加值会自动计入战斗页面的豁免 DC；地图场地按施法者位置另行计算。
+      </p>
+
+      <!-- ── 环境状态伤害 / 治疗 ── -->
+      <h3>环境状态伤害 / 治疗</h3>
+      <div v-if="movePowers.length > 0">
+        <p style="font-size: small; color: gray">
+          目标：
+          <select
+            v-model="chosenTarget"
+            class="w3-select w3-border"
+            style="width: auto; display: inline"
+          >
+            <option value="">（选择生物）</option>
+            <option v-for="c in thisCreatures" :key="c.code()" :value="c.code()">
+              {{ c.name() }} {{ c.code() }}
+            </option>
+          </select>
+        </p>
         <div
-          v-for="h in activeHints(plus, climateEffective(plus)).concat(
-            activeHints(minus, climateEffective(minus))
-          )"
-          :key="h"
-          style="font-size: small; color: #2196f3; margin-left: 1em"
+          v-for="(mp, idx) in movePowers"
+          :key="idx"
+          class="w3-padding-small"
+          :class="mp.isStatus && mp.elemType == '无属性' ? 'w3-pale-green' : 'w3-light-gray'"
+          style="display: flex; align-items: center; gap: 0.5em; margin-bottom: 0.3em"
         >
-          ! {{ h }}
+          <span>{{ mp.message() }}</span>
+          <button class="w3-button w3-blue" @click="applyMovePower(mp)">跳转</button>
         </div>
       </div>
-    </div>
-
-    <!-- ── 总元素修正 ── -->
-    <h3>环境元素伤害修正</h3>
-    <div
-      v-if="elementMods.length > 0"
-      style="display: flex; flex-wrap: wrap; gap: 0.4em; margin-bottom: 1em"
-    >
-      <span
-        v-for="mod in elementMods"
-        :key="mod.elem"
-        class="w3-tag"
-        :class="{ 'w3-red': mod.total < 0, 'w3-green': mod.total > 0 }"
-      >
-        {{ mod.elem }} {{ mod.total > 0 ? '+' : '' }}{{ mod.total.toFixed(1) }}
-      </span>
-    </div>
-    <div v-else style="color: gray; margin-bottom: 1em">无活跃的环境状态</div>
-    <p style="font-size: small; color: gray">
-      全局天气和气候修正会自动计入伤害计算；地图场地按角色位置另行计算。
-    </p>
-
-    <!-- ── 环境效应强度 ── -->
-    <h3>环境效应强度（每 5 层 ±2）</h3>
-    <div
-      v-if="effectIntensities.length > 0"
-      style="display: flex; flex-wrap: wrap; gap: 0.4em; margin-bottom: 1em"
-    >
-      <span
-        v-for="ei in effectIntensities"
-        :key="ei.elem"
-        class="w3-tag"
-        :class="{ 'w3-red': ei.val < 0, 'w3-green': ei.val > 0 }"
-      >
-        {{ ei.elem }} {{ ei.val > 0 ? '+' : '' }}{{ ei.val }}
-      </span>
-    </div>
-    <div v-else style="color: gray; margin-bottom: 1em">无环境效应强度</div>
-    <p style="font-size: small; color: gray">
-      全局天气和气候加值会自动计入战斗页面的豁免 DC；地图场地按施法者位置另行计算。
-    </p>
-
-    <!-- ── 环境状态伤害 / 治疗 ── -->
-    <h3>环境状态伤害 / 治疗</h3>
-    <div v-if="movePowers.length > 0">
-      <p style="font-size: small; color: gray">
-        目标：
-        <select
-          v-model="chosenTarget"
-          class="w3-select w3-border"
-          style="width: auto; display: inline"
-        >
-          <option value="">（选择生物）</option>
-          <option v-for="c in thisCreatures" :key="c.code()" :value="c.code()">
-            {{ c.name() }} {{ c.code() }}
-          </option>
-        </select>
-      </p>
-      <div
-        v-for="(mp, idx) in movePowers"
-        :key="idx"
-        class="w3-padding-small"
-        :class="mp.isStatus && mp.elemType == '无属性' ? 'w3-pale-green' : 'w3-light-gray'"
-        style="display: flex; align-items: center; gap: 0.5em; margin-bottom: 0.3em"
-      >
-        <span>{{ mp.message() }}</span>
-        <button class="w3-button w3-blue" @click="applyMovePower(mp)">跳转</button>
-      </div>
-    </div>
-    <div v-else style="color: gray">无环境状态伤害或治疗</div>
+      <div v-else style="color: gray">无环境状态伤害或治疗</div>
     </template>
   </div>
 </template>
