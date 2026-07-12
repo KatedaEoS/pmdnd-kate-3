@@ -90,6 +90,7 @@ export const panelSizePresets: Record<string, PanelSizePreset> = {
   StatusPanel: { width: 820, height: 620, minWidth: 520, minHeight: 360 },
   CalendarPanel: { width: 680, height: 360, minWidth: 420, minHeight: 360 },
   FallDamagePanel: { width: 520, height: 340, minWidth: 420, minHeight: 260 },
+  GrapplePanel: { width: 720, height: 560, minWidth: 480, minHeight: 360 },
   CraftingPanel: { width: 560, height: 480, minWidth: 420, minHeight: 320 },
   RestPanel: { width: 660, height: 520, minWidth: 440, minHeight: 340 },
   RaceStatsPanel: { width: 660, height: 520, minWidth: 440, minHeight: 340 },

@@ -454,7 +454,13 @@ export class BattleMemory {
   enableMiss: number
   enableAccuracyAdvance: number
 
+  customPowerEnabled: number
+  customPower: number
+  customPowerDamageType: string
+  customPowerDamageDef: string
+  customPowerDamageAspect: string
   customDamage: number
+  shieldDamageRatio: number
 
   constructor(type: number) {
     this.attacker = null
@@ -503,7 +509,13 @@ export class BattleMemory {
     this.dicerollD = 0
     this.advantageDelta = 0
     this.rollHistory = [10]
+    this.customPowerEnabled = 0
+    this.customPower = 50
+    this.customPowerDamageType = '无属性'
+    this.customPowerDamageDef = '物理'
+    this.customPowerDamageAspect = '无性相'
     this.customDamage = 0
+    this.shieldDamageRatio = 1
 
     if (type == 1) {
       this.enableCT = 1
@@ -1162,8 +1174,31 @@ export function accuracyAdvance(): number {
   return 0
 }
 
+function normalizedCustomDamage(memory: BattleMemory): number {
+  if (!isFinite(memory.customDamage)) {
+    memory.customDamage = 0
+  }
+  memory.customDamage = Math.max(0, Math.floor(memory.customDamage))
+  return memory.customDamage
+}
+
+function normalizedShieldDamageRatio(memory: BattleMemory): number {
+  if (!isFinite(memory.shieldDamageRatio)) {
+    memory.shieldDamageRatio = 1
+  }
+  memory.shieldDamageRatio = Math.max(1, Math.floor(memory.shieldDamageRatio))
+  return memory.shieldDamageRatio
+}
+
+function customDamageCalc(memory: BattleMemory, mdf: number): number {
+  return damageCalcRaw(normalizedCustomDamage(memory), 100, 1, 1, 0, mdf, 100)
+}
+
 export function damageCalc(): number {
   if (battleMemory.value.attacker != null && battleMemory.value.defender != null) {
+    if (normalizedCustomDamage(battleMemory.value) > 0) {
+      return customDamageCalc(battleMemory.value, damageMdf())
+    }
     return damageCalcRaw(
       battleMemory.value.effect,
       battleLv(),
@@ -1208,21 +1243,9 @@ export function healShieldCalc(): number {
 }
 
 export function statusCalc(heal: boolean = false): number {
-  if (!isFinite(battleMemoryStatus.value.customDamage)) {
-    battleMemoryStatus.value.customDamage = 0
-  }
-  battleMemoryStatus.value.customDamage = Math.floor(battleMemoryStatus.value.customDamage)
   if (battleMemory.value.defender != null) {
-    if (battleMemoryStatus.value.customDamage > 0) {
-      return damageCalcRaw(
-        battleMemoryStatus.value.customDamage,
-        100,
-        1,
-        1,
-        0,
-        damageMdfStatus(),
-        100
-      )
+    if (normalizedCustomDamage(battleMemoryStatus.value) > 0) {
+      return customDamageCalc(battleMemoryStatus.value, damageMdfStatus())
     }
     if (heal) {
       return damageCalcRaw(
@@ -1272,7 +1295,7 @@ export function diceHistoryLines(
   for (const v of memory.rollHistory) {
     const { roll, rollPct } = dicePct(
       v,
-      memory.dicerollD,
+      0,
       bonus,
       memory.enableCT,
       memory.ctLimit,
@@ -1299,7 +1322,8 @@ export function damageMessage(
   damageType: string,
   damageDef: string,
   damageAspect: string,
-  dmg: number
+  dmg: number,
+  shieldDamageRatio: number = 1
 ): string {
   if (battleMemory.value.defender != null) {
     const df = battleMemory.value.defender.name()
@@ -1307,7 +1331,7 @@ export function damageMessage(
       return `${df}没有受到伤害。`
     } else {
       const hp = [battleMemory.value.defender.currentHP, battleMemory.value.defender.tempHP]
-      return `${df}受到了 ${dmg} ${damageType}${damageDef}${damageAspect == '无性相' ? '' : damageAspect}伤害（HP ${showHP(hp)} -> ${showHP(handleHP(hp, battleMemory.value.defender.maxHP(), [-dmg, 0]))}）。`
+      return `${df}受到了 ${dmg} ${damageType}${damageDef}${damageAspect == '无性相' ? '' : damageAspect}伤害（HP ${showHP(hp)} -> ${showHP(handleHP(hp, battleMemory.value.defender.maxHP(), [-dmg, 0], shieldDamageRatio))}）。`
     }
   }
   return ''
@@ -1338,7 +1362,8 @@ export function attackMessage(): string {
         battleMemory.value.damageType,
         battleMemory.value.damageDef,
         battleMemory.value.damageAspect,
-        damageCalc()
+        damageCalc(),
+        normalizedShieldDamageRatio(battleMemory.value)
       )
     )
   }
@@ -1411,7 +1436,8 @@ export function statusMessage(): string {
         battleMemoryStatus.value.damageType,
         battleMemoryStatus.value.damageDef,
         battleMemoryStatus.value.damageAspect,
-        statusCalc(false)
+        statusCalc(false),
+        normalizedShieldDamageRatio(battleMemoryStatus.value)
       )
     )
   }
@@ -1512,7 +1538,10 @@ export function applyAttackResult(): void {
   }
   navigator.clipboard.writeText(attackMessage())
   battleMemory.value.attacker.takePP(-battleMemory.value.costPP)
-  battleMemory.value.defender.takeHP([-damageCalc(), 0])
+  battleMemory.value.defender.takeHP(
+    [-damageCalc(), 0],
+    normalizedShieldDamageRatio(battleMemory.value)
+  )
   battleMemory.value.costPP = 0
   moveUseCharge()
 }
@@ -1547,7 +1576,10 @@ export function applyStatusResult(): void {
   if (battleMemory.value.attacker != null) {
     battleMemory.value.attacker.takePP(-battleMemoryStatus.value.costPP)
   }
-  battleMemory.value.defender.takeHP([-statusCalc(false), 0])
+  battleMemory.value.defender.takeHP(
+    [-statusCalc(false), 0],
+    normalizedShieldDamageRatio(battleMemoryStatus.value)
+  )
   battleMemoryStatus.value.costPP = 0
   moveUseCharge()
 }

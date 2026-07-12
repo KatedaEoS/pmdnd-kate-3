@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUpdated, nextTick } from 'vue'
+import { ref, computed, watch, onUpdated, nextTick, inject } from 'vue'
 import VueNumberInput from '@chenfengyuan/vue-number-input'
 import { autoResize, d20, valueToColor } from '@renderer/utils'
 import { damageCalcRaw, showHP, handleHP } from '@renderer/model/Damage'
@@ -28,7 +28,6 @@ import {
   envEffectIntensityContributions,
   getAttackAdvantage,
   healMdf,
-  damageMdfStatus,
   dicePct,
   applyAttackResult,
   applyHealResult,
@@ -38,7 +37,13 @@ import {
   applyHealShieldStatusResult
 } from '@renderer/model/GlobalMemory'
 import Creatures, { Creature } from '@renderer/model/Creature'
-import { damageAttackList, damageTypeList, modifierList, MovePower } from '@renderer/model/DataType'
+import {
+  damageAspectList,
+  damageAttackList,
+  damageTypeList,
+  modifierList,
+  MovePower
+} from '@renderer/model/DataType'
 import type { EnvModifierContribution } from '@renderer/model/GlobalMemory'
 
 interface TargetEntry {
@@ -50,6 +55,14 @@ interface TargetEntry {
   rollHistory: number[]
 }
 
+type PowerInputMode = 'move' | 'customPower' | 'directDamage'
+type OpenPanelFn = (
+  component: string,
+  id: string,
+  title: string,
+  params?: Record<string, unknown>
+) => void
+
 const memory = ref<BattleMemory>(battleMemory.value)
 const memoryHeal = ref<BattleMemory>(battleMemoryHeal.value)
 const memoryStatus = ref<BattleMemory>(battleMemoryStatus.value)
@@ -57,10 +70,14 @@ const movem = ref<MoveMemory>(moveMemory.value)
 const targets = ref<TargetEntry[]>([])
 const batchAdvantage = ref<number>(0)
 const batchDiceroll = ref<number>(10)
+const batchDicerollD = ref<number>(0)
+const batchDamageMdfD = ref<number>(0)
 const healMode = ref<'heal' | 'shield'>('heal')
 const statusMode = ref<'damage' | 'heal' | 'shield'>('damage')
 const showMoveDescription = ref(false)
 const casterExpanded = ref(true)
+const damageDefList = ['物理', '特殊']
+const openPanel = inject<OpenPanelFn>('openPanel')
 
 const atkType = computed(() => memory.value.attackType)
 const casterMoveList = computed(() => memory.value.attacker?.getMoveInMemoryList() ?? [])
@@ -73,9 +90,173 @@ function currentPower(): MovePower | null {
   return currentMove().powerList[movem.value.selectedPowerIdx] ?? null
 }
 
+function customPowerEnabled(): boolean {
+  return memory.value.customPowerEnabled != 0
+}
+
 function isNoPower(): boolean {
+  if (customPowerEnabled() && memory.value.attacker != null && currentMove().name.length > 0) {
+    return false
+  }
   const pwr = currentPower()
   return !pwr || pwr.message() == '无威力'
+}
+
+function currentMoveRangeText(): string {
+  const range = currentMove().castRange
+  return `${range}${range.includes('*') ? '（受威胁）' : ''}`
+}
+
+function currentMoveDurationText(): string {
+  const move = currentMove()
+  return `${move.concentration.length > 0 ? '专注，至多 ' : ''}${move.duration.length > 0 ? move.duration : '立即'}`
+}
+
+function currentMoveTypeText(): string {
+  const move = currentMove()
+  return move.ring < 0 ? '动作' : `${move.ring} 环`
+}
+
+function currentSpellModName(): string {
+  if (atkType.value == 1) return memory.value.spellMod
+  if (atkType.value == 2) return memoryHeal.value.spellMod
+  if (atkType.value == 3) return memoryStatus.value.spellMod
+  return currentMove().castAbility
+}
+
+function currentSpellTypeStabText(): string {
+  if (atkType.value == 1) {
+    const directDamage = currentPowerInputMode() == 'directDamage'
+    const type = directDamage ? memory.value.damageType : memory.value.spellType
+    return `${type}（${directDamage ? 0 : spellTypeStab()}）`
+  }
+  if (atkType.value == 2) {
+    return `${memoryHeal.value.spellType}（${spellTypeStabHeal()}）`
+  }
+  if (atkType.value == 3) {
+    const type =
+      currentPowerInputMode() == 'directDamage'
+        ? memoryStatus.value.damageType
+        : memoryStatus.value.spellType
+    return `${type}（0）`
+  }
+  return `${currentMove().elemType}（0）`
+}
+
+function collapsedCasterSummary(): string {
+  if (atkType.value == 1) {
+    const aspect = memory.value.damageAspect == '无性相' ? '' : memory.value.damageAspect
+    return `${memory.value.spellName} / 威力 ${memory.value.effect} / ${memory.value.damageType}${memory.value.damageDef}${aspect}`
+  }
+  if (atkType.value == 2) {
+    return `${memoryHeal.value.spellName} / 威力 ${memoryHeal.value.effect}`
+  }
+  if (atkType.value == 3) {
+    return `${memoryStatus.value.spellName} / 威力 ${memoryStatus.value.effect}`
+  }
+  return ''
+}
+
+function normalizeCustomPowerFields(): void {
+  const mem = memory.value
+  if (!isFinite(mem.customPower)) mem.customPower = 50
+  mem.customPower = Math.max(0, Math.floor(mem.customPower))
+  if (!damageTypeList.includes(mem.customPowerDamageType)) {
+    mem.customPowerDamageType = '无属性'
+  }
+  if (!damageDefList.includes(mem.customPowerDamageDef)) {
+    mem.customPowerDamageDef = '物理'
+  }
+  if (!damageAspectList.includes(mem.customPowerDamageAspect)) {
+    mem.customPowerDamageAspect = '无性相'
+  }
+}
+
+function syncCustomPowerAttackFields(): void {
+  if (!customPowerEnabled()) return
+  normalizeCustomPowerFields()
+  const mem = memory.value
+  mem.attackType = 1
+  mem.effect = mem.customPower
+  mem.spellType = mem.customPowerDamageType
+  mem.damageType = mem.customPowerDamageType
+  mem.damageDef = mem.customPowerDamageDef
+  mem.damageAspect = mem.customPowerDamageAspect
+  mem.damageDefense = mem.customPowerDamageDef == '物理' ? '物防' : '特防'
+  mem.spellAttack = mem.customPowerDamageDef == '物理' ? '物攻' : '特攻'
+}
+
+function canUseDirectDamageMode(): boolean {
+  return atkType.value == 1 || atkType.value == 3
+}
+
+function hasPositiveDirectDamage(mem: BattleMemory): boolean {
+  return isFinite(mem.customDamage) && mem.customDamage > 0
+}
+
+function currentPowerInputMode(): PowerInputMode {
+  if (customPowerEnabled()) return 'customPower'
+  if (atkType.value == 1 && hasPositiveDirectDamage(memory.value)) return 'directDamage'
+  if (atkType.value == 3 && hasPositiveDirectDamage(memoryStatus.value)) return 'directDamage'
+  return 'move'
+}
+
+function activeDirectDamageMemory(): BattleMemory | null {
+  if (atkType.value == 1) return memory.value
+  if (atkType.value == 3) return memoryStatus.value
+  return null
+}
+
+function setPowerInputMode(mode: PowerInputMode): void {
+  if (mode == 'move') {
+    memory.value.customPowerEnabled = 0
+    memory.value.customDamage = 0
+    memoryStatus.value.customDamage = 0
+    setCurrentMove()
+    return
+  }
+
+  if (mode == 'customPower') {
+    memory.value.customDamage = 0
+    memoryStatus.value.customDamage = 0
+    memory.value.customPowerEnabled = 1
+    setCurrentMove()
+    return
+  }
+
+  memory.value.customPowerEnabled = 0
+  const previousAttackDamage = memory.value.customDamage
+  const previousStatusDamage = memoryStatus.value.customDamage
+  setCurrentMove()
+
+  const directMemory = activeDirectDamageMemory()
+  if (!directMemory) return
+
+  memory.value.customDamage = 0
+  memoryStatus.value.customDamage = 0
+  const previousDamage = directMemory == memory.value ? previousAttackDamage : previousStatusDamage
+  directMemory.customDamage =
+    isFinite(previousDamage) && previousDamage > 0 ? Math.floor(previousDamage) : 1
+}
+
+function normalizedCustomDamage(mem: BattleMemory): number {
+  if (!isFinite(mem.customDamage)) mem.customDamage = 0
+  mem.customDamage = Math.max(0, Math.floor(mem.customDamage))
+  return mem.customDamage
+}
+
+function normalizedShieldDamageRatio(mem: BattleMemory): number {
+  if (!isFinite(mem.shieldDamageRatio)) mem.shieldDamageRatio = 1
+  mem.shieldDamageRatio = Math.max(1, Math.floor(mem.shieldDamageRatio))
+  return mem.shieldDamageRatio
+}
+
+function customDamageWithMdf(mem: BattleMemory, mdf: number): number {
+  return damageCalcRaw(normalizedCustomDamage(mem), 100, 1, 1, 0, mdf, 100)
+}
+
+function syncDamageDefense(mem: BattleMemory): void {
+  mem.damageDefense = mem.damageDef == '物理' ? '物防' : '特防'
 }
 
 function resetTargetRolls(defaultAdvantage: number): void {
@@ -101,37 +282,88 @@ function setCurrentMove(): void {
     mov.powerList.length - 1
   )
   const pwr = currentPower()
-  if (!caster || !mov.name || !pwr) {
+  if (!caster || !mov.name) {
     memory.value.attackType = 0
     return
   }
 
   let costPPOverride = mov.costPP
-  const ppMatch = /([0-9]+)[Pp][Pp]/.exec(pwr.extra)
-  if (ppMatch) costPPOverride = Number(ppMatch[1])
-
-  let elemTypeOverride = mov.elemType
-  for (const name of damageTypeList) {
-    if (pwr.extra.includes(name)) elemTypeOverride = name
+  if (pwr) {
+    const ppMatch = /([0-9]+)[Pp][Pp]/.exec(pwr.extra)
+    if (ppMatch) costPPOverride = Number(ppMatch[1])
   }
 
-  let spellAttackOverride = pwr.psType == '物理' ? '物攻' : '特攻'
-  for (const name of damageAttackList) {
-    if (pwr.extra.includes(name)) spellAttackOverride = name
+  let elemTypeOverride = mov.elemType
+  if (pwr) {
+    for (const name of damageTypeList) {
+      if (pwr.extra.includes(name)) elemTypeOverride = name
+    }
+  }
+
+  let spellAttackOverride =
+    (pwr?.psType ?? memory.value.customPowerDamageDef) == '物理' ? '物攻' : '特攻'
+  if (pwr) {
+    for (const name of damageAttackList) {
+      if (pwr.extra.includes(name)) spellAttackOverride = name
+    }
   }
 
   let spellModOverride = mov.castAbility
-  for (const name of modifierList) {
-    if (pwr.extra.includes(name)) spellModOverride = name
+  if (pwr) {
+    for (const name of modifierList) {
+      if (pwr.extra.includes(name)) spellModOverride = name
+    }
   }
 
   let advantageOverride: number | null = null
-  const advMatch = pwr.extra.match(/([0-9]+)\s*优势/)
-  const disMatch = pwr.extra.match(/([0-9]+)\s*劣势/)
-  if (advMatch) advantageOverride = Number(advMatch[1])
-  else if (disMatch) advantageOverride = -Number(disMatch[1])
+  if (pwr) {
+    const advMatch = pwr.extra.match(/([0-9]+)\s*优势/)
+    const disMatch = pwr.extra.match(/([0-9]+)\s*劣势/)
+    if (advMatch) advantageOverride = Number(advMatch[1])
+    else if (disMatch) advantageOverride = -Number(disMatch[1])
+  }
 
-  if (isNoPower()) {
+  const defaultAdvantage = advantageOverride ?? 0
+
+  if (customPowerEnabled()) {
+    const customKey = [
+      moveNameKey,
+      'custom',
+      memory.value.customPower,
+      memory.value.customPowerDamageType,
+      memory.value.customPowerDamageDef,
+      memory.value.customPowerDamageAspect
+    ].join(':')
+    const isNewPower = customKey != movem.value.lastMoveName
+    memory.value.costPP = costPPOverride
+    memory.value.battleLvD = 0
+    memory.value.ctLimit = 20
+    memory.value.spellName = mov.name
+    memory.value.spellTypeStabD = 0
+    memory.value.spellAttack = spellAttackOverride
+    memory.value.spellAttackD = 0
+    memory.value.spellMod = spellModOverride
+    memory.value.spellModD = 0
+    memory.value.damageDefenseD = 0
+    memory.value.enableCT = 1
+    memory.value.enableMiss = 1
+    memory.value.enableAccuracyAdvance = 1
+    if (isNewPower) {
+      memory.value.damageMdfD = 0
+      memory.value.dicerollD = 0
+      memory.value.diceroll = 10
+      memory.value.advantageDelta = defaultAdvantage
+      memory.value.rollHistory = [10]
+      memory.value.customDamage = 0
+    }
+    syncCustomPowerAttackFields()
+    if (isNewPower) resetTargetRolls(defaultAdvantage)
+    movem.value.lastMoveName = customKey
+    ensureTargetData()
+    return
+  }
+
+  if (!pwr || isNoPower()) {
     memory.value.attackType = 0
     movem.value.nullCostPP = costPPOverride
     movem.value.lastMoveName = moveNameKey
@@ -140,7 +372,6 @@ function setCurrentMove(): void {
 
   const damageDefense = pwr.psType == '物理' ? '物防' : '特防'
   const isNewPower = `${moveNameKey}:${pwr.idx}` != movem.value.lastMoveName
-  const defaultAdvantage = advantageOverride ?? 0
 
   if (pwr.isStatus) {
     memory.value.attackType = 3
@@ -330,6 +561,7 @@ function setSaveForTargets(skill: string): void {
   surviveMemory.value.rollMode = 'save'
   surviveMemory.value.abilityOverride = ''
   surviveMemory.value.difficulty = currentDC()
+  openPanel?.('SurvivePanel', 'panel-survive', '检定与豁免', {})
 }
 
 watch(
@@ -348,6 +580,16 @@ watch(
     setCurrentMove()
   },
   { immediate: true }
+)
+
+watch(
+  () => [
+    memory.value.customPower,
+    memory.value.customPowerDamageType,
+    memory.value.customPowerDamageDef,
+    memory.value.customPowerDamageAspect
+  ],
+  syncCustomPowerAttackFields
 )
 
 function ensureTargetData(): void {
@@ -438,6 +680,24 @@ function batchSetDiceroll(): void {
   }
 }
 
+function batchSetDicerollD(): void {
+  for (const t of targets.value) {
+    t.dicerollD = batchDicerollD.value
+  }
+}
+
+function batchSetDamageMdf(value: number = batchDamageMdfD.value): void {
+  batchDamageMdfD.value = value
+  for (const t of targets.value) {
+    t.damageMdfD = value
+  }
+}
+
+watch(batchAdvantage, batchSetAdvantage)
+watch(batchDiceroll, batchSetDiceroll)
+watch(batchDicerollD, batchSetDicerollD)
+watch(batchDamageMdfD, () => batchSetDamageMdf())
+
 function rollSingle(entry: TargetEntry): void {
   entry.diceroll = d20()
   entry.rollHistory = [entry.diceroll]
@@ -520,15 +780,18 @@ function computeResult(entry: TargetEntry): TargetResult {
     code: entry.code,
     name: defender.name(),
     defValue,
-    damage: damageCalcRaw(
-      mem.effect,
-      battleLv(),
-      spellAttack(),
-      defValue,
-      spellTypeStab(),
-      mdf,
-      rollPct
-    ),
+    damage:
+      normalizedCustomDamage(mem) > 0
+        ? customDamageWithMdf(mem, mdf)
+        : damageCalcRaw(
+            mem.effect,
+            battleLv(),
+            spellAttack(),
+            defValue,
+            spellTypeStab(),
+            mdf,
+            rollPct
+          ),
     mdf,
     roll,
     rollPct
@@ -625,21 +888,6 @@ function computeStatusResult(entry: TargetEntry): StatusResult {
     ms.enableMiss
   )
 
-  if (ms.customDamage > 0) {
-    const mdf = damageMdfStatus() - ms.damageMdfD + entry.damageMdfD
-    const v = damageCalcRaw(ms.customDamage, 100, 1, 1, 0, mdf, 100)
-    return {
-      code: entry.code,
-      name: creature.name(),
-      damage: v,
-      heal: v,
-      shield: v,
-      roll,
-      rollPct,
-      mdf
-    }
-  }
-
   const cr = battleLvStatus()
   const defValue = Math.max(
     1,
@@ -651,11 +899,15 @@ function computeStatusResult(entry: TargetEntry): StatusResult {
     envTypeMdfTotal([ms.damageType, ms.damageAspect], memory.value.attacker) +
     entry.damageMdfD
   const healMdfVal = ms.damageMdfD + entry.damageMdfD
+  const customDamage = normalizedCustomDamage(ms)
 
   return {
     code: entry.code,
     name: creature.name(),
-    damage: damageCalcRaw(ms.effect, cr, cr * 2, defValue, 0, mdf, rollPct),
+    damage:
+      customDamage > 0
+        ? customDamageWithMdf(ms, mdf)
+        : damageCalcRaw(ms.effect, cr, cr * 2, defValue, 0, mdf, rollPct),
     heal: damageCalcRaw(ms.effect, cr, 1, 1, 0, healMdfVal, rollPct),
     shield: damageCalcRaw(ms.effect, cr, 1, 1, 0, healMdfVal, rollPct),
     roll,
@@ -736,7 +988,7 @@ const logText = computed<string>(() => {
             }
 
     for (const v of entry.rollHistory) {
-      const { roll: dv, rollPct: dp } = dicePct(v, entry.dicerollD, bonus, ct.e, ct.l, ct.m)
+      const { roll: dv, rollPct: dp } = dicePct(v, 0, bonus, ct.e, ct.l, ct.m)
       lines.push(
         `【骰子】(${atkName}：${spellName})[${dp}%]D20${bonus > 0 ? '+' : ''}${bonus != 0 ? bonus : ''}=${dv}`
       )
@@ -746,7 +998,12 @@ const logText = computed<string>(() => {
       const r = results.value[i]
       if (!r) continue
       const hp = [creature.currentHP, creature.tempHP]
-      const preview = handleHP(hp, creature.maxHP(), [-r.damage, 0])
+      const preview = handleHP(
+        hp,
+        creature.maxHP(),
+        [-r.damage, 0],
+        normalizedShieldDamageRatio(mem)
+      )
       if (r.damage <= 0) {
         lines.push(`${creature.name()}没有受到伤害。`)
       } else {
@@ -782,7 +1039,7 @@ const logText = computed<string>(() => {
           const dt =
             ms.damageType + ms.damageDef + (ms.damageAspect == '无性相' ? '' : ms.damageAspect)
           lines.push(
-            `${creature.name()}受到了 ${r.damage} ${dt}状态伤害（HP ${showHP(hp)} -> ${showHP(handleHP(hp, creature.maxHP(), [-r.damage, 0]))}）。`
+            `${creature.name()}受到了 ${r.damage} ${dt}状态伤害（HP ${showHP(hp)} -> ${showHP(handleHP(hp, creature.maxHP(), [-r.damage, 0], normalizedShieldDamageRatio(ms)))}）。`
           )
         }
       } else if (statusMode.value == 'heal') {
@@ -895,11 +1152,13 @@ function applyStatus(entry: TargetEntry, action: 'damage' | 'heal' | 'shield'): 
   const origMdfD = ms.damageMdfD
   const origDiceroll = ms.diceroll
   const origDicerollD = ms.dicerollD
+  const origCustomDamage = ms.customDamage
 
   mem.defender = defender
   ms.damageMdfD = entry.damageMdfD
   ms.diceroll = entry.diceroll
   ms.dicerollD = entry.dicerollD
+  if (action != 'damage') ms.customDamage = 0
 
   if (action == 'heal') {
     applyHealStatusResult()
@@ -913,6 +1172,7 @@ function applyStatus(entry: TargetEntry, action: 'damage' | 'heal' | 'shield'): 
   ms.damageMdfD = origMdfD
   ms.diceroll = origDiceroll
   ms.dicerollD = origDicerollD
+  ms.customDamage = origCustomDamage
 }
 
 function applyAllStatus(action: 'damage' | 'heal' | 'shield'): void {
@@ -938,58 +1198,52 @@ onUpdated(() => {
 
 <template>
   <div class="multi-target-panel panel-page">
-    <div class="w3-container w3-border w3-round" style="padding: 0.5em; margin-bottom: 0.75em">
-      <div
-        style="
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.5em;
-          align-items: center;
-          justify-content: space-between;
-        "
-      >
-        <div
-          v-if="casterExpanded"
-          style="display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center"
-        >
-          <span>施法者</span>
-          <select
-            :value="memory.attacker?.code() ?? ''"
-            class="w3-select w3-border"
-            style="width: 14em"
-            @change="chooseCaster(($event.target as HTMLSelectElement).value)"
-          >
-            <option value="">未选择</option>
-            <option v-for="c in Creatures" :key="c.code()" :value="c.code()">
-              {{ c.name() }} {{ c.code() }}
-            </option>
-          </select>
+    <div class="spell-selector-panel">
+      <div class="spell-selector-header">
+        <div v-if="casterExpanded" class="spell-selector-main">
+          <label class="spell-field spell-field-caster">
+            <span class="spell-field-label">施法者</span>
+            <select
+              :value="memory.attacker?.code() ?? ''"
+              class="w3-select w3-border spell-control"
+              @change="chooseCaster(($event.target as HTMLSelectElement).value)"
+            >
+              <option value="">未选择</option>
+              <option v-for="c in Creatures" :key="c.code()" :value="c.code()">
+                {{ c.name() }} {{ c.code() }}
+              </option>
+            </select>
+          </label>
 
           <template v-if="memory.attacker != null">
-            <span>要使用招式</span>
-            <input
-              v-model="movem.selectedMove"
-              class="w3-input"
-              style="width: 10em"
-              list="spell-suggestions"
-              @change="setCurrentMove()"
-            />
+            <label class="spell-field spell-field-move">
+              <span class="spell-field-label">招式</span>
+              <input
+                v-model="movem.selectedMove"
+                class="w3-input spell-control"
+                list="spell-suggestions"
+                @change="setCurrentMove()"
+              />
+            </label>
             <datalist id="spell-suggestions">
               <option v-for="name in casterMoveList" :key="name" :value="name"></option>
             </datalist>
-            <select
-              v-model="movem.selectedMove"
-              class="w3-select w3-border"
-              style="width: 10em"
-              @change="setCurrentMove()"
-              @wheel="moveWheel"
-            >
-              <option v-for="name in casterMoveList" :key="name" :value="name">
-                {{ name }}
-              </option>
-            </select>
+            <label class="spell-field spell-field-prepared">
+              <span class="spell-field-label">预备</span>
+              <select
+                v-model="movem.selectedMove"
+                class="w3-select w3-border spell-control"
+                @change="setCurrentMove()"
+                @wheel="moveWheel"
+              >
+                <option v-for="name in casterMoveList" :key="name" :value="name">
+                  {{ name }}
+                </option>
+              </select>
+            </label>
           </template>
         </div>
+
         <p
           v-if="
             !casterExpanded &&
@@ -997,100 +1251,110 @@ onUpdated(() => {
             currentMove().name.length > 0 &&
             !isNoPower()
           "
-          style="
-            margin: 0;
-            flex: 1;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-          "
+          class="spell-selector-summary"
         >
-          <span v-if="atkType == 1">攻击方：</span>
-          <span v-else>施法者：</span>
-          <span style="font-weight: bold">{{ memory.attacker!.name() }}</span>
-          <span v-if="atkType == 1">
-            | {{ memory.spellName }} | {{ memory.spellType }} | 威力 {{ memory.effect }}
-            {{ memory.damageType }}{{ memory.damageDef
-            }}{{ memory.damageAspect == '无性相' ? '' : memory.damageAspect }}
-          </span>
-          <span v-if="atkType == 2">
-            | {{ memoryHeal.spellName }} | 威力 {{ memoryHeal.effect }}
-          </span>
-          <span v-if="atkType == 3">
-            | {{ memoryStatus.spellName }} | 威力 {{ memoryStatus.effect }}
-          </span>
+          <span class="spell-summary-role">{{ atkType == 1 ? '攻击方' : '施法者' }}</span>
+          <strong>{{ memory.attacker!.name() }}</strong>
+          <span>{{ collapsedCasterSummary() }}</span>
         </p>
-        <button
-          class="w3-button w3-tiny w3-light-gray"
-          style="flex-shrink: 0"
-          @click="casterExpanded = !casterExpanded"
-        >
+
+        <button class="w3-button spell-collapse-button" @click="casterExpanded = !casterExpanded">
           {{ casterExpanded ? '收起' : '展开' }}
         </button>
       </div>
 
-      <div v-if="casterExpanded && currentMove().name.length > 0" style="margin-top: 0.5em">
-        <div v-if="currentMove().inMemory.length <= 0" style="color: crimson">该招式未预备</div>
-        <div v-if="currentMove().maxCharge > 0">
-          次数剩余：{{ currentMove().chargeAt }} {{ currentMove().charge }} /
-          {{ currentMove().maxCharge }}
+      <div v-if="casterExpanded && currentMove().name.length > 0" class="spell-selector-body">
+        <div class="spell-status-row">
+          <span v-if="currentMove().inMemory.length <= 0" class="spell-warning">未预备</span>
+          <span v-if="currentMove().maxCharge > 0" class="spell-status-pill">
+            次数 {{ currentMove().chargeAt }} {{ currentMove().charge }} /
+            {{ currentMove().maxCharge }}
+          </span>
+          <span v-if="currentMove().cooldown.length > 0" class="spell-status-pill">
+            冷却 {{ currentMove().cooldown }}
+          </span>
         </div>
-        <div>
-          {{ currentMove().ring < 0 ? '动作' : `${currentMove().ring} 环` }}
-          {{ currentMove().elemType }}
-          {{ currentMove().castAbility }} | 施法资源：{{ currentMove().costs() }} | 施法距离：{{
-            currentMove().castRange
-          }}{{ currentMove().castRange.includes('*') ? '（受威胁）' : '' }} |
-          <span>本次消耗：</span>
-          <vue-number-input
-            v-if="atkType == 0"
-            v-model="movem.nullCostPP"
-            size="small"
-            inline
-            center
-            controls
-            :step="15"
-            :min="0"
-          />
-          <vue-number-input
-            v-if="atkType == 1"
-            v-model="memory.costPP"
-            size="small"
-            inline
-            center
-            controls
-            :step="15"
-            :min="0"
-          />
-          <vue-number-input
-            v-if="atkType == 2"
-            v-model="memoryHeal.costPP"
-            size="small"
-            inline
-            center
-            controls
-            :step="15"
-            :min="0"
-          />
-          <vue-number-input
-            v-if="atkType == 3"
-            v-model="memoryStatus.costPP"
-            size="small"
-            inline
-            center
-            controls
-            :step="15"
-            :min="0"
-          />
-          <span>PP</span>
+
+        <div class="spell-meta-grid">
+          <div class="spell-meta-row spell-meta-row-main">
+            <div class="spell-meta-item">
+              <span>类型/环位</span>
+              <strong>{{ currentMoveTypeText() }}</strong>
+            </div>
+            <div class="spell-meta-item">
+              <span>属性一致加成</span>
+              <strong>{{ currentSpellTypeStabText() }}</strong>
+            </div>
+            <div class="spell-meta-item">
+              <span>施法关键属性</span>
+              <strong>{{ currentSpellModName() }}</strong>
+            </div>
+            <div class="spell-meta-item">
+              <span>施法距离</span>
+              <strong>{{ currentMoveRangeText() }}</strong>
+            </div>
+            <div class="spell-meta-item">
+              <span>持续时间</span>
+              <strong>{{ currentMoveDurationText() }}</strong>
+            </div>
+          </div>
+          <div class="spell-meta-row spell-meta-row-support">
+            <div class="spell-meta-item">
+              <span>资源</span>
+              <strong>{{ currentMove().costs() }}</strong>
+            </div>
+            <div class="spell-meta-item">
+              <span>施法成分</span>
+              <strong>{{ currentMove().components() }}</strong>
+            </div>
+            <label class="spell-meta-item spell-cost-item">
+              <span>本次消耗</span>
+              <span class="spell-cost-control">
+                <vue-number-input
+                  v-if="atkType == 0"
+                  v-model="movem.nullCostPP"
+                  size="small"
+                  inline
+                  center
+                  controls
+                  :step="15"
+                  :min="0"
+                />
+                <vue-number-input
+                  v-if="atkType == 1"
+                  v-model="memory.costPP"
+                  size="small"
+                  inline
+                  center
+                  controls
+                  :step="15"
+                  :min="0"
+                />
+                <vue-number-input
+                  v-if="atkType == 2"
+                  v-model="memoryHeal.costPP"
+                  size="small"
+                  inline
+                  center
+                  controls
+                  :step="15"
+                  :min="0"
+                />
+                <vue-number-input
+                  v-if="atkType == 3"
+                  v-model="memoryStatus.costPP"
+                  size="small"
+                  inline
+                  center
+                  controls
+                  :step="15"
+                  :min="0"
+                />
+                <strong>PP</strong>
+              </span>
+            </label>
+          </div>
         </div>
-        <div>
-          法术成分：{{ currentMove().components() }} | 持续时间：{{
-            currentMove().concentration.length > 0 ? '专注，至多 ' : ''
-          }}{{ currentMove().duration.length > 0 ? currentMove().duration : '立即' }}
-        </div>
-        <div v-if="currentMove().cooldown.length > 0">冷却回合：{{ currentMove().cooldown }}</div>
 
         <div
           v-if="envDcContributions.length > 0 || envDamageMdfContributions.length > 0"
@@ -1110,177 +1374,253 @@ onUpdated(() => {
           </span>
         </div>
 
-        <div
-          v-if="currentMove().name.length > 0 && currentMove().powerList.length > 0"
-          style="margin-top: 0.5em"
-        >
-          <div style="display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center">
-            <span>选择威力</span>
-            <select
-              v-model="movem.selectedPowerIdx"
-              class="w3-select w3-border"
-              style="width: 28em"
-              @change="setCurrentMove()"
-              @wheel="movePowerWheel"
-            >
-              <option v-for="pwr in currentMove().powerList" :key="pwr.idx" :value="pwr.idx">
-                {{ pwr.message() }}
-              </option>
-            </select>
-            <span>DC {{ currentDC() - movem.dcDelta }} +</span>
-            <vue-number-input
-              v-model="movem.dcDelta"
-              size="small"
-              inline
-              center
-              controls
-              :step="1"
-            />
-          </div>
+        <div class="spell-config-grid">
+          <section class="spell-config-section spell-config-section-main">
+            <div class="spell-config-title">威力</div>
+            <div class="spell-power-row">
+              <div class="power-mode-switch" aria-label="威力模式">
+                <button
+                  class="w3-button power-mode-button"
+                  :class="{ active: currentPowerInputMode() == 'move' }"
+                  @click="setPowerInputMode('move')"
+                >
+                  招式威力
+                </button>
+                <button
+                  class="w3-button power-mode-button"
+                  :class="{ active: currentPowerInputMode() == 'customPower' }"
+                  @click="setPowerInputMode('customPower')"
+                >
+                  自定义威力
+                </button>
+                <button
+                  class="w3-button power-mode-button"
+                  :class="{ active: currentPowerInputMode() == 'directDamage' }"
+                  :disabled="!canUseDirectDamageMode()"
+                  @click="setPowerInputMode('directDamage')"
+                >
+                  直接伤害
+                </button>
+              </div>
 
-          <div
-            style="
-              display: flex;
-              flex-wrap: wrap;
-              gap: 0.5em;
-              align-items: center;
-              margin-top: 0.5em;
-            "
+              <div class="power-mode-fields">
+                <template v-if="currentPowerInputMode() == 'move'">
+                  <label
+                    v-if="currentMove().powerList.length > 0"
+                    class="spell-inline-field spell-inline-field-power"
+                  >
+                    <select
+                      v-model="movem.selectedPowerIdx"
+                      class="w3-select w3-border spell-control"
+                      @change="setCurrentMove()"
+                      @wheel="movePowerWheel"
+                    >
+                      <option
+                        v-for="pwr in currentMove().powerList"
+                        :key="pwr.idx"
+                        :value="pwr.idx"
+                      >
+                        {{ pwr.message() }}
+                      </option>
+                    </select>
+                  </label>
+                  <span v-else class="spell-stat-pill">无可选威力</span>
+                </template>
+
+                <template v-if="currentPowerInputMode() == 'customPower'">
+                  <label class="spell-inline-field spell-number-field">
+                    <span>威力</span>
+                    <vue-number-input
+                      v-model="memory.customPower"
+                      size="small"
+                      inline
+                      center
+                      controls
+                      :min="0"
+                      :step="5"
+                    />
+                  </label>
+                  <select
+                    v-model="memory.customPowerDamageType"
+                    class="w3-select w3-border compact-select"
+                  >
+                    <option v-for="name in damageTypeList" :key="name" :value="name">
+                      {{ name }}
+                    </option>
+                  </select>
+                  <select
+                    v-model="memory.customPowerDamageDef"
+                    class="w3-select w3-border mini-select"
+                  >
+                    <option v-for="name in damageDefList" :key="name" :value="name">
+                      {{ name }}
+                    </option>
+                  </select>
+                  <select
+                    v-model="memory.customPowerDamageAspect"
+                    class="w3-select w3-border compact-select"
+                  >
+                    <option v-for="name in damageAspectList" :key="name" :value="name">
+                      {{ name }}
+                    </option>
+                  </select>
+                </template>
+
+                <template v-if="currentPowerInputMode() == 'directDamage'">
+                  <label class="spell-inline-field spell-number-field">
+                    <span>伤害</span>
+                    <vue-number-input
+                      v-if="atkType == 1"
+                      v-model="memory.customDamage"
+                      size="small"
+                      inline
+                      center
+                      controls
+                      :min="1"
+                      :step="1"
+                    />
+                    <vue-number-input
+                      v-if="atkType == 3"
+                      v-model="memoryStatus.customDamage"
+                      size="small"
+                      inline
+                      center
+                      controls
+                      :min="1"
+                      :step="1"
+                    />
+                  </label>
+                  <select
+                    v-if="atkType == 1"
+                    v-model="memory.damageType"
+                    class="w3-select w3-border compact-select"
+                  >
+                    <option v-for="name in damageTypeList" :key="name" :value="name">
+                      {{ name }}
+                    </option>
+                  </select>
+                  <select
+                    v-if="atkType == 3"
+                    v-model="memoryStatus.damageType"
+                    class="w3-select w3-border compact-select"
+                  >
+                    <option v-for="name in damageTypeList" :key="name" :value="name">
+                      {{ name }}
+                    </option>
+                  </select>
+                  <select
+                    v-if="atkType == 1"
+                    v-model="memory.damageDef"
+                    class="w3-select w3-border mini-select"
+                    @change="syncDamageDefense(memory)"
+                  >
+                    <option v-for="name in damageDefList" :key="name" :value="name">
+                      {{ name }}
+                    </option>
+                  </select>
+                  <select
+                    v-if="atkType == 3"
+                    v-model="memoryStatus.damageDef"
+                    class="w3-select w3-border mini-select"
+                    @change="syncDamageDefense(memoryStatus)"
+                  >
+                    <option v-for="name in damageDefList" :key="name" :value="name">
+                      {{ name }}
+                    </option>
+                  </select>
+                  <select
+                    v-if="atkType == 1"
+                    v-model="memory.damageAspect"
+                    class="w3-select w3-border compact-select"
+                  >
+                    <option v-for="name in damageAspectList" :key="name" :value="name">
+                      {{ name }}
+                    </option>
+                  </select>
+                  <select
+                    v-if="atkType == 3"
+                    v-model="memoryStatus.damageAspect"
+                    class="w3-select w3-border compact-select"
+                  >
+                    <option v-for="name in damageAspectList" :key="name" :value="name">
+                      {{ name }}
+                    </option>
+                  </select>
+                </template>
+
+                <label
+                  v-if="atkType == 1 || atkType == 3"
+                  class="spell-inline-field spell-number-field"
+                >
+                  <span>护盾毁伤</span>
+                  <vue-number-input
+                    v-if="atkType == 1"
+                    v-model="memory.shieldDamageRatio"
+                    size="small"
+                    inline
+                    center
+                    controls
+                    :min="1"
+                    :step="1"
+                  />
+                  <vue-number-input
+                    v-if="atkType == 3"
+                    v-model="memoryStatus.shieldDamageRatio"
+                    size="small"
+                    inline
+                    center
+                    controls
+                    :min="1"
+                    :step="1"
+                  />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="spell-config-section spell-save-section">
+            <div class="save-inline-row">
+              <span class="spell-config-title save-inline-title">豁免</span>
+              <span class="spell-stat-pill">当前 DC {{ currentDC() }}</span>
+              <label class="spell-inline-field spell-dc-field">
+                <span>基础 {{ currentDC() - movem.dcDelta }} +</span>
+                <vue-number-input
+                  v-model="movem.dcDelta"
+                  size="small"
+                  inline
+                  center
+                  controls
+                  :step="1"
+                />
+              </label>
+              <div class="save-button-row">
+                <button
+                  v-for="skill in ['力量', '敏捷', '体质', '智力', '感知', '魅力']"
+                  :key="skill"
+                  class="w3-button save-button"
+                  @click="setSaveForTargets(skill)"
+                >
+                  {{ skill }}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="spell-description-block">
+          <button
+            class="w3-button w3-light-gray spell-description-toggle"
+            @click="showMoveDescription = !showMoveDescription"
           >
-            <template v-if="atkType == 1">
-              <span
-                >攻击等级 {{ battleLv() }} | {{ memory.spellType }} 属性一致
-                {{ spellTypeStab() }}</span
-              >
-              <button
-                class="w3-button"
-                :class="{ 'w3-black': !memory.enableCT }"
-                @click="memory.enableCT = memory.enableCT ? 0 : 1"
-              >
-                {{ memory.enableCT ? '启用暴击' : '禁用暴击' }}
-              </button>
-              <vue-number-input
-                v-model="memory.ctLimit"
-                size="small"
-                inline
-                center
-                controls
-                :step="1"
-                :min="1"
-                :max="20"
-              />
-              <button
-                class="w3-button"
-                :class="{ 'w3-black': !memory.enableMiss }"
-                @click="memory.enableMiss = memory.enableMiss ? 0 : 1"
-              >
-                {{ memory.enableMiss ? '启用大失败' : '禁用大失败' }}
-              </button>
-              <button
-                class="w3-button"
-                :class="{ 'w3-black': !memory.enableAccuracyAdvance }"
-                @click="memory.enableAccuracyAdvance = memory.enableAccuracyAdvance ? 0 : 1"
-              >
-                {{ memory.enableAccuracyAdvance ? '命中减值有效' : '命中减值无效' }}
-              </button>
-            </template>
-            <template v-if="atkType == 2">
-              <span>{{ memoryHeal.spellType }} 属性一致 {{ spellTypeStabHeal() }}</span>
-              <button
-                class="w3-button"
-                :class="{ 'w3-black': !memoryHeal.enableCT }"
-                @click="memoryHeal.enableCT = memoryHeal.enableCT ? 0 : 1"
-              >
-                {{ memoryHeal.enableCT ? '启用暴击' : '禁用暴击' }}
-              </button>
-              <vue-number-input
-                v-model="memoryHeal.ctLimit"
-                size="small"
-                inline
-                center
-                controls
-                :step="1"
-                :min="1"
-                :max="20"
-              />
-              <button
-                class="w3-button"
-                :class="{ 'w3-black': !memoryHeal.enableMiss }"
-                @click="memoryHeal.enableMiss = memoryHeal.enableMiss ? 0 : 1"
-              >
-                {{ memoryHeal.enableMiss ? '启用大失败' : '禁用大失败' }}
-              </button>
-            </template>
-            <template v-if="atkType == 3">
-              <span>状态等级 {{ battleLvStatus() }}</span>
-              <button
-                class="w3-button"
-                :class="{ 'w3-black': !memoryStatus.enableCT }"
-                @click="memoryStatus.enableCT = memoryStatus.enableCT ? 0 : 1"
-              >
-                {{ memoryStatus.enableCT ? '启用暴击' : '禁用暴击' }}
-              </button>
-              <vue-number-input
-                v-model="memoryStatus.ctLimit"
-                size="small"
-                inline
-                center
-                controls
-                :step="1"
-                :min="1"
-                :max="20"
-              />
-              <button
-                class="w3-button"
-                :class="{ 'w3-black': !memoryStatus.enableMiss }"
-                @click="memoryStatus.enableMiss = memoryStatus.enableMiss ? 0 : 1"
-              >
-                {{ memoryStatus.enableMiss ? '启用大失败' : '禁用大失败' }}
-              </button>
-            </template>
-          </div>
-
-          <div
-            style="
-              display: flex;
-              flex-wrap: wrap;
-              gap: 0.25em;
-              align-items: center;
-              margin-top: 0.5em;
-            "
-          >
-            <span>豁免</span>
-            <button
-              v-for="skill in ['力量', '敏捷', '体质', '智力', '感知', '魅力']"
-              :key="skill"
-              class="w3-button w3-light-gray"
-              @click="setSaveForTargets(skill)"
-            >
-              {{ skill }} {{ currentDC() }}
-            </button>
-          </div>
-
-          <div style="margin-top: 0.5em">
-            <button
-              class="w3-button w3-light-gray"
-              @click="showMoveDescription = !showMoveDescription"
-            >
-              {{ showMoveDescription ? '收起招式描述' : '展开招式描述' }}
-            </button>
-            <textarea
-              v-if="showMoveDescription"
-              v-model="currentMove().description"
-              data-autosize
-              spellcheck="false"
-              style="
-                width: 100%;
-                min-height: 10em;
-                resize: vertical;
-                box-sizing: border-box;
-                margin-top: 0.5em;
-              "
-            ></textarea>
-          </div>
+            {{ showMoveDescription ? '收起招式描述' : '展开招式描述' }}
+          </button>
+          <textarea
+            v-if="showMoveDescription"
+            v-model="currentMove().description"
+            data-autosize
+            spellcheck="false"
+            class="spell-description-textarea"
+          ></textarea>
         </div>
       </div>
     </div>
@@ -1306,17 +1646,133 @@ onUpdated(() => {
       </div>
 
       <!-- 批量操作 -->
-      <div v-if="targets.length > 0" style="margin-bottom: 1em">
-        <p class="battlepage-item" style="font-weight: bold">批量操作</p>
-        <div style="display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap">
-          <button class="w3-button w3-blue" @click="batchRoll">一键掷骰</button>
-          <span style="font-size: small; color: gray">
-            批量优劣势：
+      <div v-if="targets.length > 0" class="batch-panel">
+        <div class="batch-header">
+          <span class="batch-title">批量操作</span>
+          <button class="w3-button w3-blue batch-roll-button" @click="batchRoll">一键掷骰</button>
+        </div>
+        <div class="batch-grid">
+          <div
+            v-if="atkType == 1 || atkType == 2 || atkType == 3"
+            class="batch-group batch-group-wide batch-judgement-group"
+          >
+            <span class="batch-label">判定</span>
+            <template v-if="atkType == 1">
+              <button
+                class="w3-button spell-toggle"
+                :class="{ active: memory.enableCT }"
+                @click="memory.enableCT = memory.enableCT ? 0 : 1"
+              >
+                {{ memory.enableCT ? '启用暴击' : '禁用暴击' }}
+              </button>
+              <label class="spell-inline-field spell-number-field">
+                <span>暴击阈值</span>
+                <vue-number-input
+                  v-model="memory.ctLimit"
+                  size="small"
+                  inline
+                  center
+                  controls
+                  :step="1"
+                  :min="1"
+                  :max="20"
+                />
+              </label>
+              <button
+                class="w3-button spell-toggle"
+                :class="{ active: memory.enableMiss }"
+                @click="memory.enableMiss = memory.enableMiss ? 0 : 1"
+              >
+                {{ memory.enableMiss ? '启用大失败' : '禁用大失败' }}
+              </button>
+              <button
+                class="w3-button spell-toggle"
+                :class="{ active: memory.enableAccuracyAdvance }"
+                @click="memory.enableAccuracyAdvance = memory.enableAccuracyAdvance ? 0 : 1"
+              >
+                {{ memory.enableAccuracyAdvance ? '命中减值有效' : '命中减值无效' }}
+              </button>
+            </template>
+            <template v-if="atkType == 2">
+              <button
+                class="w3-button spell-toggle"
+                :class="{ active: memoryHeal.enableCT }"
+                @click="memoryHeal.enableCT = memoryHeal.enableCT ? 0 : 1"
+              >
+                {{ memoryHeal.enableCT ? '启用暴击' : '禁用暴击' }}
+              </button>
+              <label class="spell-inline-field spell-number-field">
+                <span>暴击阈值</span>
+                <vue-number-input
+                  v-model="memoryHeal.ctLimit"
+                  size="small"
+                  inline
+                  center
+                  controls
+                  :step="1"
+                  :min="1"
+                  :max="20"
+                />
+              </label>
+              <button
+                class="w3-button spell-toggle"
+                :class="{ active: memoryHeal.enableMiss }"
+                @click="memoryHeal.enableMiss = memoryHeal.enableMiss ? 0 : 1"
+              >
+                {{ memoryHeal.enableMiss ? '启用大失败' : '禁用大失败' }}
+              </button>
+            </template>
+            <template v-if="atkType == 3">
+              <span class="spell-stat-pill">状态等级 {{ battleLvStatus() }}</span>
+              <button
+                class="w3-button spell-toggle"
+                :class="{ active: memoryStatus.enableCT }"
+                @click="memoryStatus.enableCT = memoryStatus.enableCT ? 0 : 1"
+              >
+                {{ memoryStatus.enableCT ? '启用暴击' : '禁用暴击' }}
+              </button>
+              <label class="spell-inline-field spell-number-field">
+                <span>暴击阈值</span>
+                <vue-number-input
+                  v-model="memoryStatus.ctLimit"
+                  size="small"
+                  inline
+                  center
+                  controls
+                  :step="1"
+                  :min="1"
+                  :max="20"
+                />
+              </label>
+              <button
+                class="w3-button spell-toggle"
+                :class="{ active: memoryStatus.enableMiss }"
+                @click="memoryStatus.enableMiss = memoryStatus.enableMiss ? 0 : 1"
+              >
+                {{ memoryStatus.enableMiss ? '启用大失败' : '禁用大失败' }}
+              </button>
+            </template>
+          </div>
+          <div class="batch-group batch-damage-group">
+            <span class="batch-label">伤害修正</span>
+            <vue-number-input v-model="batchDamageMdfD" size="small" inline center :step="0.1" />
+            <button class="w3-button w3-tiny w3-border" @click="batchSetDamageMdf(-1)">
+              攻击动作
+            </button>
+            <button class="w3-button w3-tiny w3-border" @click="batchSetDamageMdf(-2)">
+              附赠动作
+            </button>
+          </div>
+          <div class="batch-group">
+            <span class="batch-label">优劣势</span>
             <vue-number-input v-model="batchAdvantage" size="small" inline center :step="1" />
-          </span>
-          <button class="w3-button w3-tiny" @click="batchSetAdvantage">应用</button>
-          <span style="font-size: small; color: gray">
-            批量掷骰：
+          </div>
+          <div class="batch-group">
+            <span class="batch-label">调整值</span>
+            <vue-number-input v-model="batchDicerollD" size="small" inline center :step="1" />
+          </div>
+          <div class="batch-group">
+            <span class="batch-label">掷骰</span>
             <vue-number-input
               v-model="batchDiceroll"
               size="small"
@@ -1326,9 +1782,7 @@ onUpdated(() => {
               :max="20"
               :step="1"
             />
-          </span>
-          <button class="w3-button w3-tiny" @click="batchSetDiceroll">应用</button>
-          <span style="font-size: small; color: gray"> （优劣势时自动修改世界线） </span>
+          </div>
         </div>
       </div>
 
@@ -1720,6 +2174,328 @@ onUpdated(() => {
   max-width: 100%;
 }
 
+.spell-selector-panel {
+  margin-bottom: 0.75em;
+  padding: 10px;
+  border: 1px solid #d9dde3;
+  background: #fafbfc;
+}
+
+.spell-selector-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75em;
+}
+
+.spell-selector-main {
+  display: grid;
+  grid-template-columns: minmax(12em, 1.1fr) minmax(12em, 1fr) minmax(10em, 0.8fr);
+  gap: 0.6em;
+  align-items: end;
+  flex: 1;
+  min-width: 0;
+}
+
+.spell-field,
+.spell-inline-field {
+  display: flex;
+  min-width: 0;
+  gap: 0.25em;
+}
+
+.spell-field {
+  flex-direction: column;
+}
+
+.spell-inline-field {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.spell-field-label,
+.spell-inline-field > span,
+.spell-config-title,
+.spell-meta-item > span {
+  color: #57606a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.spell-control {
+  width: 100%;
+  min-width: 0;
+}
+
+.spell-collapse-button {
+  flex: 0 0 auto;
+  min-width: 4.5em;
+  padding: 7px 10px;
+  border: 1px solid #d0d7de;
+  background: #fff;
+}
+
+.spell-selector-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  min-width: 0;
+  margin: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #24292f;
+  white-space: nowrap;
+}
+
+.spell-selector-summary > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spell-summary-role {
+  flex: 0 0 auto;
+  color: #57606a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.spell-selector-body {
+  margin-top: 0.75em;
+}
+
+.spell-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em;
+  margin-bottom: 0.55em;
+}
+
+.spell-warning,
+.spell-status-pill,
+.spell-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid #d0d7de;
+  background: #fff;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.spell-warning {
+  border-color: #ffccd5;
+  background: #fff1f3;
+  color: #cf222e;
+  font-weight: 700;
+}
+
+.spell-meta-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45em;
+}
+
+.spell-meta-row {
+  display: grid;
+  gap: 0.45em;
+  align-items: stretch;
+}
+
+.spell-meta-row-main {
+  grid-template-columns:
+    minmax(5.5em, 0.72fr) minmax(8.5em, 1fr) minmax(8.5em, 1fr)
+    minmax(9em, 1.1fr) minmax(9em, 1.1fr);
+}
+
+.spell-meta-row-support {
+  grid-template-columns: minmax(9em, 1fr) minmax(9em, 1fr) minmax(12em, 1fr);
+}
+
+.spell-meta-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  min-height: 45px;
+  padding: 5px 8px;
+  border: 1px solid #e3e6ea;
+  background: #fff;
+}
+
+.spell-meta-item strong {
+  min-width: 0;
+  overflow: visible;
+  color: #1f2328;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.spell-cost-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25em;
+  min-width: 0;
+}
+
+.spell-cost-control strong {
+  flex: 0 0 auto;
+}
+
+.spell-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18em, 1fr));
+  gap: 0.6em;
+  margin-top: 0.7em;
+}
+
+.spell-config-section {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e3e6ea;
+  background: #fff;
+}
+
+.spell-config-section-main {
+  grid-column: 1 / -1;
+}
+
+.spell-config-title {
+  margin-bottom: 0.45em;
+  color: #24292f;
+}
+
+.spell-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45em;
+}
+
+.spell-power-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55em;
+  align-items: center;
+}
+
+.power-mode-switch {
+  display: inline-flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid #d0d7de;
+  background: #f6f8fa;
+}
+
+.power-mode-button {
+  min-width: 6.8em;
+  padding: 6px 10px;
+  border: 0;
+  border-right: 1px solid #d0d7de;
+  background: transparent;
+  color: #57606a;
+  line-height: 1.35;
+}
+
+.power-mode-button:last-child {
+  border-right: 0;
+}
+
+.power-mode-button.active {
+  background: #24292f;
+  color: #fff;
+}
+
+.power-mode-button:disabled {
+  color: #8c959f;
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.power-mode-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45em;
+  min-width: 0;
+}
+
+.spell-inline-field-power {
+  flex: 1 1 24em;
+}
+
+.spell-dc-field,
+.spell-number-field {
+  flex: 0 0 auto;
+}
+
+.spell-toggle {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border: 1px solid #d0d7de;
+  background: #f6f8fa;
+  color: #24292f;
+  line-height: 1.35;
+}
+
+.spell-toggle.active {
+  border-color: #24292f;
+  background: #24292f;
+  color: #fff;
+}
+
+.spell-save-section {
+  grid-column: 1 / -1;
+}
+
+.save-inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45em;
+}
+
+.save-inline-title {
+  margin-bottom: 0;
+  flex: 0 0 auto;
+}
+
+.save-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35em;
+  min-width: 0;
+}
+
+.save-button {
+  flex: 0 0 auto;
+  min-width: 3.75em;
+  padding: 5px 8px;
+  border: 1px solid #d0d7de;
+  background: #f6f8fa;
+  line-height: 1.3;
+}
+
+.spell-description-block {
+  margin-top: 0.7em;
+}
+
+.spell-description-toggle {
+  border: 1px solid #d0d7de;
+}
+
+.spell-description-textarea {
+  width: 100%;
+  min-height: 10em;
+  margin-top: 0.5em;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
 .env-auto-effects {
   display: flex;
   flex-wrap: wrap;
@@ -1743,5 +2519,188 @@ onUpdated(() => {
   color: #333;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.batch-panel {
+  margin-bottom: 1em;
+  padding: 8px 10px;
+  border: 1px solid #d9dde3;
+  background: #f7f8fa;
+}
+
+.batch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75em;
+  margin-bottom: 0.5em;
+}
+
+.batch-title {
+  font-weight: 700;
+  color: #1f2328;
+}
+
+.batch-roll-button {
+  min-width: 7em;
+}
+
+.batch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10.5em, 1fr));
+  gap: 0.45em;
+  align-items: stretch;
+}
+
+.batch-group {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid #e3e6ea;
+  background: #fff;
+}
+
+.batch-group-wide {
+  grid-column: 1 / -1;
+}
+
+.batch-damage-group {
+  grid-column: span 2;
+  flex-wrap: wrap;
+}
+
+.batch-judgement-group {
+  flex-wrap: wrap;
+}
+
+.batch-judgement-group .spell-toggle {
+  min-width: 7.5em;
+}
+
+.batch-label {
+  flex: 0 0 auto;
+  min-width: 4.4em;
+  color: #555;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.batch-group .w3-button {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  line-height: 1.35;
+}
+
+.batch-group :deep(.vue-number-input) {
+  flex: 0 0 auto;
+}
+
+.batch-hint {
+  color: #6e7781;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.custom-combat-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em;
+  margin-top: 0.5em;
+}
+
+.compact-select {
+  width: 7em;
+}
+
+.mini-select {
+  width: 5em;
+}
+
+.custom-control-hint {
+  color: #666;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .spell-selector-main {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .spell-field-caster {
+    grid-column: 1 / -1;
+  }
+
+  .spell-meta-row-main {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .spell-meta-row-support {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .spell-selector-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .spell-selector-main,
+  .spell-config-grid,
+  .spell-meta-row-main,
+  .spell-meta-row-support {
+    grid-template-columns: 1fr;
+  }
+
+  .spell-collapse-button {
+    width: 100%;
+  }
+
+  .spell-power-row {
+    grid-template-columns: 1fr;
+  }
+
+  .power-mode-switch {
+    width: 100%;
+  }
+
+  .power-mode-button {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .spell-inline-field-power,
+  .spell-dc-field,
+  .spell-number-field {
+    flex: 1 1 100%;
+  }
+
+  .save-button-row {
+    width: 100%;
+  }
+
+  .save-button {
+    flex: 1 1 4.8em;
+  }
+
+  .batch-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .batch-roll-button {
+    width: 100%;
+  }
+
+  .batch-group {
+    flex-wrap: wrap;
+  }
+
+  .batch-damage-group {
+    grid-column: 1 / -1;
+  }
 }
 </style>

@@ -231,14 +231,14 @@ function prevTurn(): void {
 }
 
 function newRound(): void {
-  for (const c of thisCreatures.value) c.newRound()
+  for (const c of thisCreatures.value) c.resetRoundResources()
   advanceFieldRounds(mm)
   requestSceneDraw()
   if (initiativeList.value.length > 0) selectCreature(initiativeList.value[0].code())
 }
 
 function hpPct(c: Creature): number {
-  return c.maxHP() > 0 ? c.currentHP / c.maxHP() : 0
+  return c.hpRatio()
 }
 
 // 从 mapMemory 获取 token 图片

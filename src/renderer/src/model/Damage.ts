@@ -22,16 +22,22 @@ export function damageCalcRaw(
   return Math.max(0, Math.floor((eff * cr * atk * coef4 * coef5 * rollp) / 10000 / def))
 }
 
-export function handleHP(hp: number[], maxhp: number, delta: number[]): number[] {
+export function handleHP(
+  hp: number[],
+  maxhp: number,
+  delta: number[],
+  shieldDamageRatio: number = 1
+): number[] {
   const cur = hp[0]
   let tmp = Math.max(hp[1], delta[1])
   let real = cur
   if (delta[0] < 0) {
-    tmp += delta[0]
-    if (tmp < 0) {
-      real += tmp
-      tmp = 0
-    }
+    const damage = -delta[0]
+    const ratio = Math.max(1, Math.floor(Number(shieldDamageRatio) || 1))
+    const shieldAbsorbedDamage = Math.min(damage, tmp > 0 ? Math.ceil(tmp / ratio) : 0)
+    const shieldLoss = Math.min(tmp, damage * ratio)
+    tmp -= shieldLoss
+    real -= damage - shieldAbsorbedDamage
   } else {
     real += delta[0]
   }

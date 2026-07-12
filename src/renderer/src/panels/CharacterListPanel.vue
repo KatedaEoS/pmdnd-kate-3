@@ -50,13 +50,13 @@ const sortedCreatures = computed(() => {
 })
 
 function hpTextColor(c: Creature): string {
-  const pct = c.maxHP() > 0 ? c.currentHP / c.maxHP() : 0
+  const pct = c.hpRatio()
   if (c.currentHP <= 0) return 'hsl(0, 100%, 50%)'
   return `hsl(${Math.max(0, Math.min(120, 120 * pct))}, 70%, 40%)`
 }
 
 function hpBarWidth(c: Creature): string {
-  const pct = c.maxHP() > 0 ? (c.currentHP / c.maxHP()) * 100 : 0
+  const pct = c.hpRatio() * 100
   return Math.max(0, Math.min(100, pct)) + '%'
 }
 

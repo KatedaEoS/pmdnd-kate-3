@@ -84,6 +84,7 @@ import { coneTrianglePoints } from './model/DrawingGeometry'
 import { drawFallbackToken, isUsableTokenImage } from './gameScene/tokenRendering'
 import { useSceneDockview } from './gameScene/useSceneDockview'
 import { HistoryManager } from './gameScene/history'
+import { roundedCreatureTokenDistance } from './model/CreatureDistance'
 import {
   drawingIsField,
   fieldColorForField,
@@ -667,6 +668,22 @@ function centerOnToken(code: string): void {
 provide('centerOnToken', centerOnToken)
 provide('requestSceneDraw', draw)
 
+function prepareBattlePanelFromCastingTargets(): void {
+  const attackerCode = battleMemory.value.attacker?.code()
+  if (!attackerCode) return
+  const attacker = Creatures.value.find((creature) => creature.code() == attackerCode)
+  if (!attacker) return
+  battleMemory.value.attacker = attacker
+  attacker.shallowRefresh()
+
+  const firstTargetCode = Array.from(surviveMemory.value.chosen)[0]
+  if (!firstTargetCode) return
+  const defender = Creatures.value.find((creature) => creature.code() == firstTargetCode)
+  if (!defender) return
+  battleMemory.value.defender = defender
+  defender.shallowRefresh()
+}
+
 // ── 菜单栏 ──
 const xlsxFileInput = ref<HTMLInputElement | null>(null)
 const quickSaveSlots = ref<QuickSaveSlotInfo[]>([])
@@ -732,6 +749,7 @@ const menuGroups = computed(() => {
       items: [
         { label: '日历', action: 'panel-calendar' },
         { label: '高空抛物', action: 'panel-fall-damage' },
+        { label: '擒抱', action: 'panel-grapple' },
         { label: '工匠装备打造', action: 'panel-crafting' },
         { label: '短休与长休', action: 'panel-rest' },
         { label: '种族值标准化', action: 'panel-race-stats' }
@@ -1024,6 +1042,8 @@ function handleMenuSelect(action: string): void {
     openPanel('CalendarPanel', 'panel-calendar', '日历', {})
   } else if (action == 'panel-fall-damage') {
     openPanel('FallDamagePanel', 'panel-fall-damage', '高空抛物', {})
+  } else if (action == 'panel-grapple') {
+    openPanel('GrapplePanel', 'panel-grapple', '擒抱', {})
   } else if (action == 'panel-crafting') {
     openPanel('CraftingPanel', 'panel-crafting', '工匠装备打造', {})
   } else if (action == 'panel-rest') {
@@ -1033,6 +1053,7 @@ function handleMenuSelect(action: string): void {
   } else if (action == 'panel-about') {
     openPanel('AboutPanel', 'panel-about', '关于凯特的万事幕后', {})
   } else if (action == 'panel-battle') {
+    prepareBattlePanelFromCastingTargets()
     openPanel('BattlePanel', 'panel-battle', '伤害详细编辑', {})
   } else if (action == 'panel-initiative') {
     openPanel('InitiativePanel', 'panel-initiative', '先攻', {})
@@ -1441,7 +1462,7 @@ function draw(): void {
     const c = thisCreatures.value.find((x) => x.code() == td.code)
     if (!c) continue
     const hpLevel = mm.hpDisplayLevels[c.faction] ?? 0
-    const hpPct = Math.max(0, Math.min(1, c.currentHP / c.maxHP()))
+    const hpPct = Math.max(0, Math.min(1, c.hpRatio()))
     const barH = Math.max(2 / (mm.viewScale || 1), td.size * 0.08)
     const barY = td.cy + td.half - barH - 2 / (mm.viewScale || 1)
 
@@ -1842,10 +1863,7 @@ function draw(): void {
         }
       } else if (dragMode == 'token') {
         if (autoAttackTarget) {
-          const [attackStart, attackEnd] = autoAttackPoints(autoAttackTarget)
-          const attackDistance =
-            Math.ceil(Math.hypot(attackEnd.x - attackStart.x, attackEnd.y - attackStart.y) * 100) /
-            100
+          const attackDistance = autoAttackDistance(autoAttackTarget)
           text = `攻击：距离 ${attackDistance.toFixed(2)}m`
           textBold = true
         } else {
@@ -2153,6 +2171,23 @@ function autoAttackPoints(defenderToken: {
       ? { x: defenderToken.x, y: defenderToken.y }
       : { x: dragTokenDropCellX, y: dragTokenDropCellY }
   return [start, end]
+}
+
+function autoAttackDistance(defenderToken: { code: string; x: number; y: number }): number {
+  const attacker = thisCreatures.value.find((creature) => creature.code() == dragCode)
+  const defender = thisCreatures.value.find((creature) => creature.code() == defenderToken.code)
+  if (!attacker || !defender) {
+    const [attackStart, attackEnd] = autoAttackPoints(defenderToken)
+    return (
+      Math.ceil(Math.hypot(attackEnd.x - attackStart.x, attackEnd.y - attackStart.y) * 100) / 100
+    )
+  }
+  return roundedCreatureTokenDistance(
+    { x: dragTokenStartX, y: dragTokenStartY },
+    attacker,
+    defenderToken,
+    defender
+  )
 }
 
 function autoAttackArrowColor(): string {

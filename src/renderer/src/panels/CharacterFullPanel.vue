@@ -16,10 +16,12 @@ import {
   mapMemory,
   toolsMemory,
   ToolsMemory,
+  weatherStatusEntries,
   type MapAsset
 } from '@renderer/model/GlobalMemory'
 import Creatures, { type Creature } from '@renderer/model/Creature'
 import { valueToColorBinary } from '@renderer/utils'
+import { fieldRemainingText, fieldStatusesForCreature } from '@renderer/model/MapFields'
 
 type CharacterPanelParams = {
   code?: string
@@ -27,6 +29,12 @@ type CharacterPanelParams = {
 
 type DockviewPanelProps = CharacterPanelParams & {
   params?: CharacterPanelParams
+}
+
+type OverviewStatusItem = {
+  key: string
+  name: string
+  detail: string
 }
 
 const props = defineProps<{ params?: DockviewPanelProps }>()
@@ -68,10 +76,31 @@ const overviewFeatureList = computed(() => {
   if (!cur) return []
   return [...cur.classFeatures, ...cur.nonClassFeatures].filter((feature) => feature.name.trim())
 })
-const overviewStatusList = computed(() => {
+const overviewStatusList = computed<OverviewStatusItem[]>(() => {
   const cur = memory.value.cur
   if (!cur) return []
-  return cur.status.status.filter((status) => status.stack > 0)
+  const weatherStatuses = weatherStatusEntries().map((entry) => ({
+    key: `weather-${entry.typeLabel}-${entry.statusName}`,
+    name: entry.statusName,
+    detail: `${entry.typeLabel} / ${entry.layers} 层${entry.details ? ` / ${entry.details}` : ''}`
+  }))
+  const fieldStatuses = fieldStatusesForCreature(cur, mapMemory.value).map((entry) => ({
+    key: `field-${entry.stateName}`,
+    name: entry.statusName,
+    detail: `场地 / ${entry.layers} 层 / ${entry.sourceCount} 个区域 / 剩余 ${entry.remainingRounds
+      .map(fieldRemainingText)
+      .join(' / ')}`
+  }))
+  const creatureStatuses = cur.status.status
+    .filter((status) => status.stack > 0)
+    .map((status) => ({
+      key: `status-${status.name}`,
+      name: status.name,
+      detail: `${status.type ? '累积型' : '持续型'} / ${status.stack} ${
+        status.type || status.name == '刚毅' ? '层' : '回合'
+      }`
+    }))
+  return [...weatherStatuses, ...fieldStatuses, ...creatureStatuses]
 })
 
 watch(
@@ -449,11 +478,10 @@ if (memory.value.cur != null) {
               <div
                 class="resource-fill hp"
                 :style="{
-                  width:
-                    Math.max(Math.min(100, (100 * memory.cur.currentHP) / memory.cur.maxHP()), 0) +
-                    '%'
-                }"
-              ></div>
+                    width:
+                      Math.max(Math.min(100, 100 * memory.cur.hpRatio()), 0) + '%'
+                  }"
+                ></div>
               <div class="resource-content resource-content-split">
                 <div class="resource-main">
                   <span class="resource-label">HP</span>
@@ -546,10 +574,7 @@ if (memory.value.cur != null) {
                   class="resource-fill hp"
                   :style="{
                     width:
-                      Math.max(
-                        Math.min(100, (100 * memory.cur.currentHP) / memory.cur.maxHP()),
-                        0
-                      ) + '%'
+                      Math.max(Math.min(100, 100 * memory.cur.hpRatio()), 0) + '%'
                   }"
                 ></div>
                 <div class="resource-content resource-content-split">
@@ -609,11 +634,11 @@ if (memory.value.cur != null) {
                 <template v-else>
                   <article
                     v-for="status in overviewStatusList"
-                    :key="`inline-${status.name}`"
+                    :key="`inline-${status.key}`"
                     class="overview-list-item compact"
                   >
                     <strong>{{ status.name }}</strong>
-                    <small>{{ status.type ? '累积型' : '持续型' }} / {{ status.stack }} 层</small>
+                    <small>{{ status.detail }}</small>
                   </article>
                 </template>
               </div>
@@ -749,11 +774,11 @@ if (memory.value.cur != null) {
                   <template v-else>
                     <article
                       v-for="status in overviewStatusList"
-                      :key="status.name"
+                      :key="status.key"
                       class="overview-list-item compact"
                     >
                       <strong>{{ status.name }}</strong>
-                      <small>{{ status.type ? '累积型' : '持续型' }} / {{ status.stack }} 层</small>
+                      <small>{{ status.detail }}</small>
                     </article>
                   </template>
                 </div>

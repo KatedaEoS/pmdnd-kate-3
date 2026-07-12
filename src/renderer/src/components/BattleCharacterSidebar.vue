@@ -76,7 +76,7 @@ function creatureTitle(creature: Creature): string {
         style="position: absolute; left: 0; top: 0; bottom: 0; opacity: 0.5"
         :style="{
           backgroundColor: '#9e9e9e',
-          width: Math.max(Math.min(100, (100 * creature.currentHP) / creature.maxHP()), 0) + '%'
+          width: Math.max(Math.min(100, 100 * creature.hpRatio()), 0) + '%'
         }"
       />
       <div
@@ -95,7 +95,7 @@ function creatureTitle(creature: Creature): string {
         <span v-if="props.showVitals" style="flex-shrink: 0; font-size: 11px">
           <span
             :style="{
-              color: `hsl(${Math.max(0, Math.min(120, (120 * creature.currentHP) / creature.maxHP()))}, ${creature.currentHP > 0 ? '70%' : '100%'}, ${creature.currentHP > 0 ? '40%' : '50%'})`
+              color: `hsl(${Math.max(0, Math.min(120, 120 * creature.hpRatio()))}, ${creature.currentHP > 0 ? '70%' : '100%'}, ${creature.currentHP > 0 ? '40%' : '50%'})`
             }"
           >
             {{ showHP([creature.currentHP, creature.tempHP]) }}/{{ creature.maxHP() }}
@@ -148,7 +148,7 @@ function creatureTitle(creature: Creature): string {
           v-if="props.showVitals && !compact"
           class="sidebar-hp-fill"
           :style="{
-            width: Math.max(Math.min(100, (100 * creature.currentHP) / creature.maxHP()), 0) + '%'
+            width: Math.max(Math.min(100, 100 * creature.hpRatio()), 0) + '%'
           }"
         />
         <div class="sidebar-row-inner">
@@ -160,7 +160,7 @@ function creatureTitle(creature: Creature): string {
             <span v-if="props.showVitals" class="sidebar-vitals">
               <span
                 :style="{
-                  color: `hsl(${Math.max(0, Math.min(120, (120 * creature.currentHP) / creature.maxHP()))}, ${creature.currentHP > 0 ? '70%' : '100%'}, ${creature.currentHP > 0 ? '40%' : '50%'})`
+                  color: `hsl(${Math.max(0, Math.min(120, 120 * creature.hpRatio()))}, ${creature.currentHP > 0 ? '70%' : '100%'}, ${creature.currentHP > 0 ? '40%' : '50%'})`
                 }"
               >
                 {{ showHP([creature.currentHP, creature.tempHP]) }}/{{ creature.maxHP() }}

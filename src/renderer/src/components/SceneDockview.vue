@@ -12,6 +12,7 @@ import SurvivePanel from '../panels/SurvivePanel.vue'
 import StatusPanel from '../panels/StatusPanel.vue'
 import CalendarPanel from '../panels/CalendarPanel.vue'
 import FallDamagePanel from '../panels/FallDamagePanel.vue'
+import GrapplePanel from '../panels/GrapplePanel.vue'
 import CraftingPanel from '../panels/CraftingPanel.vue'
 import RestPanel from '../panels/RestPanel.vue'
 import RaceStatsPanel from '../panels/RaceStatsPanel.vue'
@@ -37,6 +38,7 @@ const dockviewComponents = {
   StatusPanel,
   CalendarPanel,
   FallDamagePanel,
+  GrapplePanel,
   CraftingPanel,
   RestPanel,
   RaceStatsPanel,

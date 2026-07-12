@@ -618,6 +618,13 @@ export class Creature {
     }
     return this.attribute(0, equip)
   }
+  maxHPForRatio(equip: boolean = true): number {
+    return this.attribute(0, equip)
+  }
+  hpRatio(equip: boolean = true): number {
+    const max = this.maxHPForRatio(equip)
+    return max > 0 ? this.currentHP / max : 0
+  }
   patk(equip: boolean = true): number {
     return this.attribute(1, equip)
   }
@@ -921,14 +928,19 @@ export class Creature {
     this.attributeChange.spd = fading(this.attributeChange.spd, this.attributeChangeBase.spd)
   }
 
-  newRound(): void {
+  resetRoundResources(): void {
     this.currentAction = this.action
     this.currentBonusAction = this.bonusAction
     this.currentReaction = this.reaction
     this.currentMov = this.sizeAbility.mov
-    this.status.triggerOnTurn()
     this.attributeChangeFade()
 
+    this.validate()
+  }
+
+  newRound(): void {
+    this.resetRoundResources()
+    this.status.triggerOnTurn()
     this.validate()
   }
 
@@ -973,17 +985,17 @@ export class Creature {
     return [this.currentHP, this.tempHP]
   }
 
-  previewHP(delta: number[]): number[] {
-    const res = handleHP(this.hpSet(), this.maxHP(), delta)
+  previewHP(delta: number[], shieldDamageRatio: number = 1): number[] {
+    const res = handleHP(this.hpSet(), this.maxHP(), delta, shieldDamageRatio)
     return res
   }
 
   hpPercentageString(): string {
-    return ((100 * this.currentHP) / this.maxHP()).toFixed(2) + '%'
+    return (100 * this.hpRatio()).toFixed(2) + '%'
   }
 
-  takeHP(delta: number[]): void {
-    const res = this.previewHP(delta)
+  takeHP(delta: number[], shieldDamageRatio: number = 1): void {
+    const res = this.previewHP(delta, shieldDamageRatio)
     this.currentHP = res[0]
     this.tempHP = Math.max(0, res[1])
   }
