@@ -44,6 +44,10 @@ export function readCardFromXlsx(file: xlsx.WorkBook): Creature {
     throw Error(`文件表头有错误：${file.Props?.Title}`)
   }
 
+  const factionLabelCell = isFullCard ? 'M1' : 'G1'
+  const factionValueCell = isFullCard ? 'P1' : 'J1'
+  const isNewCard = String(character[factionLabelCell]?.v ?? '').trim() == '阵营'
+
   try {
     profile = new Profile(
       character['C2'].v,
@@ -241,6 +245,12 @@ export function readCardFromXlsx(file: xlsx.WorkBook): Creature {
     return { size: 1, original: '小型' }
   }
 
+  function readFootprint(address: string, fallback: number): number {
+    if (!isNewCard) return fallback
+    const footprint = Number(stats[address]?.v)
+    return Number.isFinite(footprint) && footprint >= 0.5 ? footprint : fallback
+  }
+
   let sizeAbility: SizeAbility
   let currentLoadCapacity: number
   try {
@@ -249,7 +259,7 @@ export function readCardFromXlsx(file: xlsx.WorkBook): Creature {
       sizeAbility = new SizeAbility(
         stats['B28'].v,
         stats['F28'].v,
-        parsed.size,
+        readFootprint('H29', parsed.size),
         stats['F29'].v,
         stats['B31'].v,
         parsed.original
@@ -260,7 +270,7 @@ export function readCardFromXlsx(file: xlsx.WorkBook): Creature {
       sizeAbility = new SizeAbility(
         stats['B35'].v,
         stats['F35'].v,
-        parsed.size,
+        readFootprint('H36', parsed.size),
         stats['F36'].v,
         stats['B38'].v,
         parsed.original
@@ -361,6 +371,9 @@ export function readCardFromXlsx(file: xlsx.WorkBook): Creature {
   } catch {
     throw Error(`角色“${profile.name}”（${profile.code}）的难度等级或传奇修正存在问题`)
   }
+  const legacyFaction = difficultyModifier == 1.25 ? '玩家' : '敌方'
+  const cardFaction = String(character[factionValueCell]?.v ?? '').trim()
+  const faction = isNewCard && cardFaction ? cardFaction : legacyFaction
 
   let elemtypes: xlsx.WorkSheet
   try {
@@ -731,44 +744,85 @@ export function readCardFromXlsx(file: xlsx.WorkBook): Creature {
   }
 
   const moves: Move[] = []
+  const moveColumns = isNewCard
+    ? {
+        name: 'C',
+        elemtype: 'D',
+        castAbility: 'E',
+        power: 'F',
+        costAction: 'G',
+        costBonusAction: 'H',
+        costReaction: 'I',
+        costMove: 'J',
+        costPP: 'K',
+        costOther: 'L',
+        castRange: 'M',
+        duration: 'N',
+        concentration: 'O',
+        charge: 'P',
+        chargeAt: 'Q',
+        cooldown: 'R',
+        V: 'S',
+        S: 'T',
+        M: 'U',
+        description: 'V'
+      }
+    : {
+        name: 'E',
+        elemtype: 'F',
+        castAbility: 'H',
+        power: 'K',
+        costAction: 'L',
+        costBonusAction: 'M',
+        costReaction: 'N',
+        costMove: 'O',
+        costPP: 'P',
+        costOther: 'Q',
+        castRange: 'R',
+        duration: 'S',
+        concentration: 'T',
+        charge: 'U',
+        chargeAt: 'V',
+        cooldown: 'W',
+        V: 'X',
+        S: 'Y',
+        M: 'Z',
+        description: 'AA'
+      }
 
   function fetchMove(row: number): Move | null {
-    try {
-      if (movesList[`E${row}`] == undefined || movesList[`E${row}`].v == null) {
-        return null
-      }
-    } catch {
-      return null
-    }
+    const valueAt = (column: string): unknown => movesList[`${column}${row}`]?.v
+    const textAt = (column: string, fallback = ''): string => String(valueAt(column) ?? fallback)
+    const name = textAt(moveColumns.name).trim()
+    if (!name) return null
 
-    const inMemory = movesList[`A${row}`]?.v ?? ''
-    const ring = movesList[`B${row}`]?.v ?? -1
-    const name = movesList[`E${row}`]?.v ?? ''
+    const inMemory = String(movesList[`A${row}`]?.v ?? '')
+    const ring = Number(movesList[`B${row}`]?.v ?? -1)
 
-    const elemtype = movesList[`F${row}`]?.v ?? '无属性'
-    const castAbility = movesList[`H${row}`]?.v ?? '无加值'
-    const powerRaw = movesList[`K${row}`]?.v ?? ''
+    const elemtype = textAt(moveColumns.elemtype, '无属性')
+    const castAbility = textAt(moveColumns.castAbility, '无加值')
+    const powerRaw = textAt(moveColumns.power)
 
-    const costAction = movesList[`L${row}`]?.v ?? ''
-    const costBonusAction = movesList[`M${row}`]?.v ?? ''
-    const costReaction = movesList[`N${row}`]?.v ?? ''
-    const costMove = movesList[`O${row}`]?.v ?? ''
-    const costPP = movesList[`P${row}`]?.v ?? 0
-    const costOther = movesList[`Q${row}`]?.v ?? ''
+    const costAction = textAt(moveColumns.costAction)
+    const costBonusAction = textAt(moveColumns.costBonusAction)
+    const costReaction = textAt(moveColumns.costReaction)
+    const costMove = textAt(moveColumns.costMove)
+    const costPP = Number(valueAt(moveColumns.costPP) ?? 0)
+    const costOther = textAt(moveColumns.costOther)
 
-    const castRange = movesList[`R${row}`]?.v ?? ''
-    const duration = movesList[`S${row}`]?.v ?? ''
-    const concentration = movesList[`T${row}`]?.v ?? ''
+    const castRange = textAt(moveColumns.castRange)
+    const duration = textAt(moveColumns.duration)
+    const concentration = textAt(moveColumns.concentration)
 
-    const chargeRaw = movesList[`U${row}`]?.v ?? ''
-    const chargeAt = movesList[`V${row}`]?.v ?? ''
-    const cooldown = movesList[`W${row}`]?.v ?? ''
+    const chargeRaw = textAt(moveColumns.charge)
+    const chargeAt = textAt(moveColumns.chargeAt)
+    const cooldown = textAt(moveColumns.cooldown)
 
-    const V = movesList[`X${row}`]?.v ?? ''
-    const S = movesList[`Y${row}`]?.v ?? ''
-    const M = movesList[`Z${row}`]?.v ?? ''
+    const V = textAt(moveColumns.V)
+    const S = textAt(moveColumns.S)
+    const M = textAt(moveColumns.M)
 
-    const description = movesList[`AA${row}`]?.v ?? ''
+    const description = textAt(moveColumns.description)
 
     const movepowers: MovePower[] = [new MovePower(0, 0, '治疗', '特殊', '', true, '')]
 
@@ -915,7 +969,7 @@ export function readCardFromXlsx(file: xlsx.WorkBook): Creature {
     typeMdfChange,
     legendaryModifier,
     difficultyModifier,
-    difficultyModifier == 1.25 ? '玩家' : '敌方',
+    faction,
     currentHP,
     tempHP,
     currentPP,
