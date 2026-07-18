@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
@@ -13,6 +13,7 @@ const api = {
   deleteQuickSave: (slot: number) => ipcRenderer.invoke('deleteQuickSave', slot),
   getSaveDir: () => ipcRenderer.invoke('getSaveDir'),
   openSaveDir: () => ipcRenderer.invoke('openSaveDir'),
+  setZoomFactor: (factor: number) => webFrame.setZoomFactor(factor),
   onAutoSave: (cb: () => void) => ipcRenderer.on('autoSave', cb),
   autoSaveDone: () => ipcRenderer.send('autoSaveDone')
 }

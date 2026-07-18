@@ -56,6 +56,11 @@ export class ToolsMemory {
   selectedDate: string
 
   raceStats: number[]
+  raceStatAdjustments: number[]
+  raceStatAttackSwap: boolean
+  raceStatDefenseSwap: boolean
+  raceStatUpperException: number
+  raceStatLowerException: number
 
   constructor() {
     this.pageName = ''
@@ -70,6 +75,11 @@ export class ToolsMemory {
 
     this.selectedDate = new Date().toISOString().split('T')[0]
     this.raceStats = [0, 0, 0, 0, 0, 0]
+    this.raceStatAdjustments = [0, 0, 0, 0, 0, 0]
+    this.raceStatAttackSwap = false
+    this.raceStatDefenseSwap = false
+    this.raceStatUpperException = -1
+    this.raceStatLowerException = -1
   }
 }
 
@@ -333,7 +343,6 @@ export class MapMemory {
   hpDisplayLevels: Record<string, number> = { 玩家: 2, 友方: 2, 中立: 2, 敌方: 2 }
   collapsedSections: string[] = []
   initiativeBarEnabled: boolean = false
-  renderScale: number = 4
   fogVisible: boolean = true
 }
 

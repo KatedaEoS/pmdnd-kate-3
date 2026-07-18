@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import Creatures, { Creature } from '@renderer/model/Creature'
+import Creatures from '@renderer/model/Creature'
 import {
   environmentDamageOnTurn,
   envTypeMdfTotal,
   mapMemory,
-  statusMemory,
   StatusMemory,
   weatherStatusEntries
 } from '@renderer/model/GlobalMemory'
-import { ref, computed, onBeforeUnmount, nextTick, onUpdated } from 'vue'
+import { ref, computed, onBeforeUnmount, nextTick, onUpdated, watch } from 'vue'
 import VueNumberInput from '@chenfengyuan/vue-number-input'
 import { damageCalcRaw, showHP, handleHP } from '@renderer/model/Damage'
 import { MovePower } from '@renderer/model/DataType'
@@ -16,6 +15,16 @@ import type { Status } from '@renderer/model/DataType'
 import { S_Null, StatusList } from '@renderer/model/Status'
 import { autoResize, toMod, valueToColorBinary } from '@renderer/utils'
 import { fieldRemainingText, fieldStatusesForCreature } from '@renderer/model/MapFields'
+
+type StatusPanelParams = {
+  code?: string
+}
+
+type DockviewPanelProps = StatusPanelParams & {
+  params?: StatusPanelParams
+}
+
+const props = defineProps<{ params?: DockviewPanelProps }>()
 
 function valueToColor(val: number): string {
   if (val == 0) {
@@ -27,8 +36,8 @@ function valueToColor(val: number): string {
   }
 }
 
-const thisCreatures = ref<Creature[]>(Creatures.value)
-const memory = ref<StatusMemory>(statusMemory.value)
+const memory = ref<StatusMemory>(new StatusMemory())
+const creatureCode = computed(() => props.params?.params?.code ?? props.params?.code ?? '')
 
 function toPartPage(): void {
   if (memory.value.cur != null) {
@@ -44,14 +53,14 @@ function toFullPage(): void {
   memory.value.pageNumber = 2
 }
 
-function onChangeSelectedCreature(code: string): void {
-  const index = thisCreatures.value.findIndex((creature) => creature.code() == code)
-  if (index < 0) {
-    memory.value.cur = null
-    return
-  }
-  memory.value.cur = thisCreatures.value[index]
-}
+watch(
+  creatureCode,
+  (code) => {
+    memory.value.cur = Creatures.value.find((creature) => creature.code() == code) ?? null
+    memory.value.cur?.shallowRefresh()
+  },
+  { immediate: true }
+)
 
 onBeforeUnmount(() => {
   if (memory.value.cur != null) {
@@ -231,16 +240,10 @@ onUpdated(() => {
   <div class="status-panel">
     <div class="status-toolbar">
       <span class="status-field-label">角色</span>
-      <select
-        :value="memory.cur?.code() ?? ''"
-        class="w3-select w3-border status-creature-select"
-        @change="onChangeSelectedCreature(($event.target as HTMLSelectElement).value)"
-      >
-        <option value="">（选择角色）</option>
-        <option v-for="creature in thisCreatures" :key="creature.code()" :value="creature.code()">
-          {{ creature.name() }} {{ creature.code() }}
-        </option>
-      </select>
+      <div class="status-creature-identity">
+        <strong>{{ memory.cur?.name() ?? '角色不存在' }}</strong>
+        <code>{{ creatureCode }}</code>
+      </div>
       <div class="status-tabs" role="tablist" aria-label="状态管理视图">
         <button
           class="w3-button status-tab-button"
@@ -576,13 +579,36 @@ onUpdated(() => {
   color: #555;
 }
 
-.status-creature-select {
+.status-creature-identity {
+  display: flex;
   flex: 1 1 220px;
-  min-width: 180px;
-  max-width: 360px;
-  height: 32px;
-  padding-top: 4px;
-  padding-bottom: 4px;
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+  gap: 0.6em;
+  padding: 4px 9px;
+  overflow: hidden;
+  border: 1px solid #cfcfcf;
+  border-radius: 4px;
+  background: #f7f7f7;
+}
+
+.status-creature-identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-creature-identity code {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 1px 4px;
+  background: #e8e8e8;
+  color: #555;
+  font-size: 0.85em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-tabs {

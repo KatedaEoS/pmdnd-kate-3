@@ -16,7 +16,7 @@
 
 如果你没有 Node.js，你可以先在[这里](https://nodejs.org/en/download)下载。
 
-建议使用 Node.js 22 版本。
+建议使用 Node.js 24 版本。
 
 ### 安装依赖
 

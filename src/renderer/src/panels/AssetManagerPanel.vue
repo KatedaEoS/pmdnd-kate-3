@@ -410,7 +410,7 @@ function saveCurrentSettings(asset: MapAsset): void {
 }
 
 .settings-grid :deep(.vue-number-input--small.vue-number-input--inline.vue-number-input--controls) {
-  width: 7rem !important;
+  width: 10rem !important;
   max-width: 100%;
 }
 

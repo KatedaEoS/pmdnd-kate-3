@@ -21,10 +21,12 @@ import AssetManagerPanel from '../panels/AssetManagerPanel.vue'
 import BackgroundSettingsPanel from '../panels/BackgroundSettingsPanel.vue'
 import AboutPanel from '../panels/AboutPanel.vue'
 import FieldEditPanel from '../panels/FieldEditPanel.vue'
-import DockviewWindowActions from './DockviewWindowActions.vue'
+import SettingsPanel from '../panels/SettingsPanel.vue'
+import DockviewPanelTab from './DockviewPanelTab.vue'
 
 const emit = defineEmits<{ ready: [event: DockviewReadyEvent] }>()
-const dockviewWindowActions = DockviewWindowActions as any
+defineProps<{ legacyMode: boolean }>()
+const dockviewPanelTab = DockviewPanelTab as any
 
 const dockviewComponents = {
   CharacterSheetPanel,
@@ -46,17 +48,18 @@ const dockviewComponents = {
   AssetManagerPanel,
   BackgroundSettingsPanel,
   AboutPanel,
-  FieldEditPanel
+  FieldEditPanel,
+  SettingsPanel
 }
 </script>
 
 <template>
-  <div class="dockview-overlay">
+  <div class="dockview-overlay" :class="{ 'dockview-overlay--legacy': legacyMode }">
     <DockviewVue
       class="dockview-instance dockview-theme-light"
       :components="dockviewComponents as any"
       :theme="themeLight"
-      :right-header-actions-component="dockviewWindowActions"
+      :default-tab-component="dockviewPanelTab"
       dndStrategy="pointer"
       floatingGroupBounds="boundedWithinViewport"
       @ready="emit('ready', $event)"
@@ -159,6 +162,29 @@ const dockviewComponents = {
 
 .dockview-overlay :deep(.dv-close-button) {
   color: #888;
+}
+
+.dockview-overlay--legacy {
+  top: 28px;
+  background: #fff;
+  pointer-events: auto;
+}
+
+.dockview-overlay--legacy :deep(.dv-shell),
+.dockview-overlay--legacy :deep(.dv-grid-view),
+.dockview-overlay--legacy :deep(.dv-branch-node),
+.dockview-overlay--legacy :deep(.dv-split-view-container),
+.dockview-overlay--legacy :deep(.dv-view-container),
+.dockview-overlay--legacy :deep(.dv-tab-group-indicator-none) {
+  background: #fff !important;
+}
+
+.dockview-overlay--legacy :deep(.dv-tabs-and-actions-container) {
+  border-radius: 0;
+}
+
+.dockview-overlay--legacy :deep(.dv-groupview) {
+  border: 1px solid #dedede;
 }
 
 @media (pointer: coarse) and (orientation: landscape) {

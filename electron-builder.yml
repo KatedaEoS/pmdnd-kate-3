@@ -14,12 +14,12 @@ asarUnpack:
 win:
   executableName: pmdnd-kate
   icon: build/icons/win/icon.ico
-  target: portable
-# nsis:
-#   artifactName: ${name}-${version}.${ext}
-#   shortcutName: ${productName}
-#   uninstallDisplayName: ${productName}
-#   createDesktopShortcut: false
+  target: ['portable', 'nsis']
+nsis:
+  artifactName: ${name}-${version}.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: false
 portable:
   artifactName: ${productName}_${version}.${ext}
   splashImage: build/pmdnd-splash.bmp

@@ -166,6 +166,14 @@ export const webPlatform: AppAPI = {
     return Promise.resolve()
   },
 
+  setZoomFactor(factor) {
+    const normalized = Number.isFinite(factor) && factor > 0 ? factor : 1
+    const appRoot = document.getElementById('app')
+    if (!appRoot) return
+    appRoot.style.setProperty('zoom', String(normalized))
+    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')))
+  },
+
   onAutoSave(cb) {
     window.addEventListener('beforeunload', (e) => {
       e.preventDefault()

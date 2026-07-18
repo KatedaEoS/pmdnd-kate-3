@@ -84,6 +84,7 @@ import { coneTrianglePoints } from './model/DrawingGeometry'
 import { drawFallbackToken, isUsableTokenImage } from './gameScene/tokenRendering'
 import { useSceneDockview } from './gameScene/useSceneDockview'
 import { HistoryManager } from './gameScene/history'
+import { appSettings, normalizeRenderScale } from './appSettings'
 import { roundedCreatureTokenDistance } from './model/CreatureDistance'
 import {
   drawingIsField,
@@ -97,6 +98,7 @@ import {
 const thisCreatures = ref<Creature[]>(Creatures.value)
 const mm = mapMemory.value
 const containerRef = ref<HTMLDivElement | null>(null)
+const legacyMode = computed(() => appSettings.workspaceMode == 'legacy')
 
 // ── Dockview ──
 const { dockviewApi, onDockviewReady, scheduleKeepFloatingPanelsReachable, cleanupDockview } =
@@ -292,9 +294,7 @@ function handleContextMenu(action: string): void {
       openPanel('MultiTargetPanel', 'panel-multi', '施法', {})
       break
     case 'status':
-      statusMemory.value.cur = c
-      c.shallowRefresh()
-      openPanel('StatusPanel', 'panel-status', '状态管理', {})
+      openStatusPanelForCode(c.code())
       break
     case 'refresh-mov':
       c.currentMov = c.sizeAbility.mov
@@ -315,7 +315,10 @@ function shouldRememberFloatingBounds(panelId: string): boolean {
 }
 
 function rememberFloatingBounds(panelId: string): void {
-  if (!shouldRememberFloatingBounds(panelId) || !dockviewApi.value?.getPanel(panelId)) return
+  const panel = dockviewApi.value?.getPanel(panelId)
+  if (!shouldRememberFloatingBounds(panelId) || !panel || panel.api.location.type != 'floating') {
+    return
+  }
   const bounds = currentFloatingBounds(panelId)
   if (bounds) rememberedFloatingBounds.set(panelId, bounds)
 }
@@ -364,8 +367,7 @@ function registerPanel(
 }
 
 function dockviewFloatingHostRect():
-  | DOMRect
-  | { width: number; height: number; left: number; top: number } {
+  DOMRect | { width: number; height: number; left: number; top: number } {
   const host = containerRef.value?.querySelector<HTMLElement>('.dv-floating-overlay-host')
   const rect = host?.getBoundingClientRect() ?? containerRef.value?.getBoundingClientRect()
   return rect ?? { width: window.innerWidth, height: window.innerHeight, left: 0, top: 0 }
@@ -385,8 +387,10 @@ function normalizeFloatingBounds(
   const minHeight = Math.min(preset.minHeight, maxHeight)
   const width = clampNumber(preferred?.width ?? preset.width, minWidth, maxWidth)
   const height = clampNumber(preferred?.height ?? preset.height, minHeight, maxHeight)
-  const x = clampNumber(preferred?.x ?? 200, 0, Math.max(0, hostWidth - width - 12))
-  const y = clampNumber(preferred?.y ?? 120, 28, Math.max(28, hostHeight - height - 12))
+  const defaultX = component == 'SettingsPanel' ? 24 : 200
+  const defaultY = component == 'SettingsPanel' ? 40 : 120
+  const x = clampNumber(preferred?.x ?? defaultX, 0, Math.max(0, hostWidth - width - 12))
+  const y = clampNumber(preferred?.y ?? defaultY, 28, Math.max(28, hostHeight - height - 12))
   return { x, y, width, height, minWidth, minHeight }
 }
 
@@ -436,6 +440,8 @@ function floatingBoundsFromPanelElement(panelId: string): FloatingPanelBounds | 
 }
 
 function currentFloatingBounds(panelId: string): FloatingPanelBounds | null {
+  const panel = dockviewApi.value?.getPanel(panelId)
+  if (!panel || panel.api.location.type != 'floating') return null
   return floatingBoundsFromDockviewLayout(panelId) ?? floatingBoundsFromPanelElement(panelId)
 }
 
@@ -474,7 +480,103 @@ function addFloatingPanel(
   scheduleKeepFloatingPanelsReachable()
 }
 
-// 打开浮窗面板
+function addDockedPanel(
+  component: string,
+  id: string,
+  title: string,
+  params?: Record<string, unknown>
+): void {
+  const api = dockviewApi.value
+  if (!api) return
+  const preset = panelSizePresets[component] ?? defaultPanelSizePreset
+  const panelOptions = {
+    id,
+    component,
+    title,
+    params: params ?? {},
+    minimumWidth: preset.minWidth,
+    minimumHeight: preset.minHeight
+  }
+  registerPanel(component, id, title, params)
+  const referencePanel = api.activePanel
+  if (referencePanel) {
+    api.addPanel({
+      ...panelOptions,
+      position: {
+        referencePanel,
+        direction: 'within'
+      }
+    })
+  } else {
+    api.addPanel(panelOptions)
+  }
+}
+
+function addWorkspacePanel(
+  component: string,
+  id: string,
+  title: string,
+  params?: Record<string, unknown>,
+  preferredBounds?: Partial<FloatingPanelBounds>
+): void {
+  if (legacyMode.value) {
+    addDockedPanel(component, id, title, params)
+    return
+  }
+  addFloatingPanel(component, id, title, params, preferredBounds)
+}
+
+interface OpenPanelEntry extends RegisteredPanel {
+  id: string
+}
+
+function currentOpenPanelEntries(): { panels: OpenPanelEntry[]; activeId?: string } {
+  const api = dockviewApi.value
+  if (!api) return { panels: [] }
+  const panels: OpenPanelEntry[] = []
+  api.panels.forEach((panel) => {
+    const state = panel.toJSON()
+    const registered = panelRegistry.get(panel.id)
+    const component = registered?.component ?? state.contentComponent
+    if (!component) return
+    panels.push({
+      id: panel.id,
+      component,
+      title: panel.title ?? registered?.title ?? state.title ?? panel.id,
+      params: (state.params as Record<string, unknown> | undefined) ?? registered?.params ?? {}
+    })
+  })
+  return {
+    panels,
+    activeId: api.activePanel?.id
+  }
+}
+
+function migrateOpenPanelsForWorkspaceMode(): void {
+  const api = dockviewApi.value
+  if (!api) return
+  const { panels, activeId } = currentOpenPanelEntries()
+  if (panels.length == 0) {
+    nextTick(fitCanvas)
+    return
+  }
+
+  api.clear()
+  panels.forEach((panel, index) => {
+    if (legacyMode.value) {
+      addDockedPanel(panel.component, panel.id, panel.title, panel.params)
+      return
+    }
+    addFloatingPanel(panel.component, panel.id, panel.title, panel.params, {
+      x: 160 + (index % 8) * 24,
+      y: 64 + (index % 8) * 24
+    })
+  })
+  api.getPanel(activeId ?? panels.at(-1)?.id ?? '')?.focus()
+  nextTick(fitCanvas)
+}
+
+// 打开工作区面板
 function openPanel(
   component: string,
   id: string,
@@ -499,7 +601,15 @@ function openPanel(
     existing.focus()
     return
   }
-  addFloatingPanel(component, id, title, params)
+  addWorkspacePanel(component, id, title, params)
+}
+
+function openStatusPanelForCode(code: string): void {
+  const creature = Creatures.value.find((item) => item.code() == code)
+  if (!creature) return
+  statusMemory.value.cur = creature
+  creature.shallowRefresh()
+  openPanel('StatusPanel', `status-${code}`, `${creature.name()} [${code}] · 状态`, { code })
 }
 
 function buildMinimizedPanelEntry(panelId: string): MinimizedPanelEntry | null {
@@ -558,7 +668,7 @@ function restoreMinimizedPanel(panelId: string): boolean {
     existing.focus()
     return true
   }
-  addFloatingPanel(entry.component, entry.id, entry.title, entry.params, entry)
+  addWorkspacePanel(entry.component, entry.id, entry.title, entry.params, entry)
   return true
 }
 
@@ -651,6 +761,7 @@ function maybeAttachFieldToNewDrawing<T extends { type: string; field?: unknown 
 }
 
 provide('openPanel', openPanel)
+provide('openStatusPanel', openStatusPanelForCode)
 provide('minimizeDockviewPanel', minimizePanel)
 
 function centerOnToken(code: string): void {
@@ -676,9 +787,10 @@ function prepareBattlePanelFromCastingTargets(): void {
   battleMemory.value.attacker = attacker
   attacker.shallowRefresh()
 
-  const firstTargetCode = Array.from(surviveMemory.value.chosen)[0]
-  if (!firstTargetCode) return
-  const defender = Creatures.value.find((creature) => creature.code() == firstTargetCode)
+  const chosen = surviveMemory.value.chosen
+  const defender = Creatures.value.find(
+    (creature) => creature.code() != 'DM' && chosen.has(creature.code())
+  )
   if (!defender) return
   battleMemory.value.defender = defender
   defender.shallowRefresh()
@@ -696,6 +808,10 @@ function currentQuickSlots(): QuickSaveSlotInfo[] {
 
 const menuGroups = computed(() => {
   const slots = currentQuickSlots()
+  const statusPanelItems = Creatures.value.map((creature) => ({
+    label: `${creature.name()} · ${creature.code()}`,
+    action: `panel-status-code-${encodeURIComponent(creature.code())}`
+  }))
   return [
     {
       label: '编辑',
@@ -711,7 +827,9 @@ const menuGroups = computed(() => {
           shortcut: 'Ctrl/⌘+Shift+Z',
           action: 'history-redo',
           disabled: !history.canRedo.value
-        }
+        },
+        { separator: true, label: '' },
+        { label: '设置', action: 'panel-settings' }
       ]
     },
     {
@@ -726,7 +844,11 @@ const menuGroups = computed(() => {
       items: [
         { label: '伤害详细编辑', action: 'panel-battle' },
         { label: '施法', action: 'panel-multi' },
-        { label: '状态管理', action: 'panel-status' },
+        {
+          label: '状态管理',
+          disabled: statusPanelItems.length == 0,
+          children: statusPanelItems
+        },
         { label: '先攻指示器', shortcut: 'I', action: 'panel-initiative' }
       ]
     },
@@ -997,6 +1119,11 @@ function handleMenuSelect(action: string): void {
     redoHistory()
     return
   }
+  const statusPanelMatch = action.match(/^panel-status-code-(.+)$/)
+  if (statusPanelMatch) {
+    openStatusPanelForCode(decodeURIComponent(statusPanelMatch[1]))
+    return
+  }
   const quickSaveMatch = action.match(/^quick-save-slot-(\d+)$/)
   if (quickSaveMatch) {
     saveQuickSlot(Number(quickSaveMatch[1]))
@@ -1014,6 +1141,10 @@ function handleMenuSelect(action: string): void {
   }
   if (action == 'import-xlsx') {
     importXlsx()
+    return
+  }
+  if (action == 'panel-settings') {
+    openPanel('SettingsPanel', 'panel-settings', '设置', {})
     return
   }
   if (action == 'save-dialog') {
@@ -1060,7 +1191,10 @@ function handleMenuSelect(action: string): void {
   } else if (action == 'panel-multi') {
     openPanel('MultiTargetPanel', 'panel-multi', '施法', {})
   } else if (action == 'panel-status') {
-    openPanel('StatusPanel', 'panel-status', '状态管理', {})
+    const creature =
+      Creatures.value.find((item) => item.code() == statusMemory.value.cur?.code()) ??
+      Creatures.value[0]
+    if (creature) openStatusPanelForCode(creature.code())
   } else if (action == 'panel-survive') {
     togglePanel('SurvivePanel', 'panel-survive', '检定与豁免', {})
   }
@@ -1105,18 +1239,6 @@ function setHPDisplayLevel(faction: string, level: number): void {
   draw()
 }
 
-function setRenderScale(scale: number): void {
-  const previous = currentRenderScale()
-  const next = normalizeRenderScale(scale)
-  if (previous == next) return
-  const ratio = next / previous
-  mm.renderScale = next
-  mm.viewX *= ratio
-  mm.viewY *= ratio
-  mm.viewScale = clampNumber(mm.viewScale * ratio, minViewScale(), maxViewScale())
-  fitCanvas()
-}
-
 function toggleGridSetup(): void {
   gridSetupMode.value = !gridSetupMode.value
   if (gridSetupMode.value) {
@@ -1138,19 +1260,12 @@ const canvasHeight = ref<number>(800)
 const defaultRenderScale = 4
 const baseMinViewScale = 0.1 / defaultRenderScale
 const baseMaxViewScale = 10 / defaultRenderScale
-mm.renderScale = normalizeRenderScale(mm.renderScale)
-mm.viewScale = 4
+mm.viewScale = currentRenderScale()
 
 let resizeObserver: ResizeObserver | null = null
 
-function normalizeRenderScale(value: unknown): number {
-  const n = Math.round(Number(value))
-  if (!Number.isFinite(n)) return defaultRenderScale
-  return clampNumber(n, 1, 8)
-}
-
 function currentRenderScale(): number {
-  return normalizeRenderScale(mm.renderScale)
+  return normalizeRenderScale(appSettings.renderScale)
 }
 
 function minViewScale(): number {
@@ -2081,8 +2196,7 @@ function canvasPointerDistance(
 }
 
 function firstTwoCanvasPointers():
-  | [{ clientX: number; clientY: number }, { clientX: number; clientY: number }]
-  | null {
+  [{ clientX: number; clientY: number }, { clientX: number; clientY: number }] | null {
   const pointers = Array.from(activeCanvasPointers.values())
   if (pointers.length < 2) return null
   return [pointers[0], pointers[1]]
@@ -3019,6 +3133,24 @@ onMounted(() => {
     }, 16)
   }
   watch(
+    () => appSettings.renderScale,
+    (nextValue, previousValue) => {
+      const previous = normalizeRenderScale(previousValue)
+      const next = normalizeRenderScale(nextValue)
+      if (previous == next) return
+      const ratio = next / previous
+      mm.viewX *= ratio
+      mm.viewY *= ratio
+      mm.viewScale = clampNumber(mm.viewScale * ratio, minViewScale(), maxViewScale())
+      fitCanvas()
+    }
+  )
+  watch(
+    () => appSettings.workspaceMode,
+    () => migrateOpenPanelsForWorkspaceMode(),
+    { flush: 'post' }
+  )
+  watch(
     () =>
       Creatures.value.map(
         (c) =>
@@ -3054,7 +3186,7 @@ onMounted(() => {
       mm.viewX,
       mm.viewY,
       mm.viewScale,
-      mm.renderScale
+      appSettings.renderScale
     ],
     () => {
       const asset = mm.currentBackgroundKey
@@ -3157,7 +3289,7 @@ function onKeyDown(e: KeyboardEvent): void {
   }
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
 
-  if (/^[1-9]$/.test(e.key)) {
+  if (!legacyMode.value && /^[1-9]$/.test(e.key)) {
     const mode = drawModes[Number(e.key) - 1]
     if (mode) {
       e.preventDefault()
@@ -3165,7 +3297,7 @@ function onKeyDown(e: KeyboardEvent): void {
     }
     return
   }
-  if (e.key == '0') {
+  if (!legacyMode.value && e.key == '0') {
     e.preventDefault()
     toggleFogVisible()
     return
@@ -3226,17 +3358,18 @@ function ESSerializerSerialize(options: SerializeStateOptions = {}): string {
       surfaceLayers: envMemory.value.surfaceLayers
     },
     map: {
+      ...(includeView
+        ? {
+            viewUnit: 'css',
+            viewX: mm.viewX / currentRenderScale(),
+            viewY: mm.viewY / currentRenderScale(),
+            viewScale: mm.viewScale / currentRenderScale()
+          }
+        : {}),
       tokens: mm.tokens,
       cellSize: mm.cellSize,
       offsetX: mm.offsetX,
       offsetY: mm.offsetY,
-      ...(includeView
-        ? {
-            viewX: mm.viewX,
-            viewY: mm.viewY,
-            viewScale: mm.viewScale
-          }
-        : {}),
       bgDataUrl: mm.bgDataUrl,
       bgWorldW: mm.bgWorldW,
       bgWorldH: mm.bgWorldH,
@@ -3253,7 +3386,6 @@ function ESSerializerSerialize(options: SerializeStateOptions = {}): string {
       hpDisplayLevels: mm.hpDisplayLevels,
       collapsedSections: mm.collapsedSections,
       initiativeBarEnabled: mm.initiativeBarEnabled,
-      renderScale: mm.renderScale,
       fogVisible: mm.fogVisible
     },
     status: {
@@ -3522,17 +3654,21 @@ function loadMapData(m: Record<string, unknown>, options: { preserveView?: boole
     viewY: mm.viewY,
     viewScale: mm.viewScale
   }
+  const sourceRenderScale =
+    m.viewUnit == 'css' ? 1 : normalizeRenderScale(m.renderScale ?? defaultRenderScale)
+  const viewScaleRatio = currentRenderScale() / sourceRenderScale
   Object.assign(mm, new MapMemory())
   if (m.tokens) mm.tokens = m.tokens as typeof mm.tokens
   if (m.cellSize) mm.cellSize = m.cellSize as number
   if (m.offsetX !== undefined) mm.offsetX = m.offsetX as number
   if (m.offsetY !== undefined) mm.offsetY = m.offsetY as number
-  if (m.viewX !== undefined) mm.viewX = m.viewX as number
+  if (m.viewX !== undefined) mm.viewX = Number(m.viewX) * viewScaleRatio
   else if (options.preserveView) mm.viewX = previousView.viewX
-  if (m.viewY !== undefined) mm.viewY = m.viewY as number
+  if (m.viewY !== undefined) mm.viewY = Number(m.viewY) * viewScaleRatio
   else if (options.preserveView) mm.viewY = previousView.viewY
-  if (m.viewScale !== undefined) mm.viewScale = m.viewScale as number
+  if (m.viewScale !== undefined) mm.viewScale = Number(m.viewScale) * viewScaleRatio
   else if (options.preserveView) mm.viewScale = previousView.viewScale
+  else mm.viewScale = currentRenderScale()
   if (m.bgDataUrl !== undefined) {
     mm.bgDataUrl = m.bgDataUrl as string
     loadBgFromDataUrl()
@@ -3556,8 +3692,6 @@ function loadMapData(m: Record<string, unknown>, options: { preserveView?: boole
   if (m.collapsedSections) mm.collapsedSections = m.collapsedSections as string[]
   if (m.initiativeBarEnabled !== undefined)
     mm.initiativeBarEnabled = m.initiativeBarEnabled as boolean
-  if (m.renderScale !== undefined) mm.renderScale = normalizeRenderScale(m.renderScale)
-  else mm.renderScale = normalizeRenderScale(mm.renderScale)
   if (m.fogVisible !== undefined) mm.fogVisible = m.fogVisible as boolean
   normalizeMapAssets(mm)
   loadTokenImages()
@@ -3583,7 +3717,7 @@ async function buildSaveJson(): Promise<void> {
 </script>
 
 <template>
-  <div ref="containerRef" class="desktop">
+  <div ref="containerRef" class="desktop" :class="{ 'desktop--legacy': legacyMode }">
     <MenuBar :groups="menuGroups" @select="handleMenuSelect" />
     <input
       ref="xlsxFileInput"
@@ -3594,6 +3728,7 @@ async function buildSaveJson(): Promise<void> {
       @change="onXlsxChange"
     />
     <SceneToolbar
+      v-if="!legacyMode"
       :mm="mm"
       :draw-mode="drawMode"
       :draw-color="drawColor"
@@ -3605,9 +3740,8 @@ async function buildSaveJson(): Promise<void> {
       @enter-draw-mode="enterDrawMode"
       @toggle-fog-visible="toggleFogVisible"
       @set-hp-display-level="setHPDisplayLevel"
-      @render-scale-change="setRenderScale"
     />
-    <div class="scene-background-layer" aria-hidden="true">
+    <div v-if="!legacyMode" class="scene-background-layer" aria-hidden="true">
       <img
         v-if="mm.bgDataUrl"
         class="scene-background-image"
@@ -3616,6 +3750,7 @@ async function buildSaveJson(): Promise<void> {
       />
     </div>
     <canvas
+      v-if="!legacyMode"
       ref="canvasRef"
       class="scene-canvas"
       :width="canvasWidth"
@@ -3628,7 +3763,7 @@ async function buildSaveJson(): Promise<void> {
       @wheel.prevent="canvasWheel"
       @contextmenu.prevent="canvasContextMenu"
     />
-    <SceneDockview @ready="handleDockviewReady" />
+    <SceneDockview :legacy-mode="legacyMode" @ready="handleDockviewReady" />
     <SceneTaskbar
       :panels="taskbarPanels"
       @restore="restoreMinimizedPanel"
@@ -3655,9 +3790,8 @@ async function buildSaveJson(): Promise<void> {
 
 <style scoped>
 .desktop {
-  width: 100vw;
-  height: 100vh;
-  height: 100dvh;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: #ffffff;
   position: relative;

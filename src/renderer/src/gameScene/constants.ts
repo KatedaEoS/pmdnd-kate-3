@@ -93,12 +93,13 @@ export const panelSizePresets: Record<string, PanelSizePreset> = {
   GrapplePanel: { width: 720, height: 560, minWidth: 480, minHeight: 360 },
   CraftingPanel: { width: 560, height: 480, minWidth: 420, minHeight: 320 },
   RestPanel: { width: 660, height: 520, minWidth: 440, minHeight: 340 },
-  RaceStatsPanel: { width: 660, height: 520, minWidth: 440, minHeight: 340 },
+  RaceStatsPanel: { width: 840, height: 680, minWidth: 520, minHeight: 420 },
   InitiativePanel: { width: 820, height: 160, minWidth: 420, minHeight: 72 },
   AssetManagerPanel: { width: 860, height: 620, minWidth: 560, minHeight: 420 },
   BackgroundSettingsPanel: { width: 700, height: 560, minWidth: 460, minHeight: 360 },
   AboutPanel: { width: 420, height: 300, minWidth: 320, minHeight: 220 },
-  FieldEditPanel: { width: 520, height: 420, minWidth: 380, minHeight: 280 }
+  FieldEditPanel: { width: 520, height: 420, minWidth: 380, minHeight: 280 },
+  SettingsPanel: { width: 440, height: 320, minWidth: 360, minHeight: 260 }
 }
 
 export const defaultPanelSizePreset: PanelSizePreset = {

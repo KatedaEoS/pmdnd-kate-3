@@ -32,6 +32,7 @@ export interface AppAPI {
   deleteQuickSave: (slot: number) => Promise<{ success: boolean; message?: string }>
   getSaveDir: () => Promise<string>
   openSaveDir: () => Promise<void>
+  setZoomFactor: (factor: number) => void
   onAutoSave: (cb: () => void) => void
   autoSaveDone: () => void
 }

@@ -4,6 +4,8 @@ import 'dockview-vue/dist/styles/dockview.css'
 
 import { createApp } from 'vue'
 import App from './App.vue'
+import { initializeAppSettings } from './appSettings'
+import { webPlatform } from './platform/web'
 import CharacterSheetPanel from './panels/CharacterSheetPanel.vue'
 import CharacterListPanel from './panels/CharacterListPanel.vue'
 import CharacterFullPanel from './panels/CharacterFullPanel.vue'
@@ -23,6 +25,9 @@ import InitiativePanel from './panels/InitiativePanel.vue'
 import AssetManagerPanel from './panels/AssetManagerPanel.vue'
 import BackgroundSettingsPanel from './panels/BackgroundSettingsPanel.vue'
 import AboutPanel from './panels/AboutPanel.vue'
+
+if (!window.api) window.api = webPlatform
+initializeAppSettings()
 
 const app = createApp(App)
 app.component('CharacterSheetPanel', CharacterSheetPanel)

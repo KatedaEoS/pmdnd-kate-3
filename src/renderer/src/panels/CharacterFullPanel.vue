@@ -3097,6 +3097,7 @@ if (memory.value.cur != null) {
 }
 
 .section-body {
+  overflow-x: auto;
   padding: 0.65em;
 }
 

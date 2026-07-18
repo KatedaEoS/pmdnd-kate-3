@@ -10,6 +10,7 @@ const openPanel = inject('openPanel') as (
   params?: Record<string, unknown>
 ) => void
 const centerOnToken = inject('centerOnToken') as (code: string) => void
+const openStatusPanel = inject('openStatusPanel') as (code: string) => void
 
 const creatures = ref<Creature[]>(Creatures.value)
 
@@ -66,6 +67,10 @@ function openCharacter(code: string): void {
     centerOnToken(code)
     openPanel('CharacterFullPanel', `char-${c.code()}`, c.name(), { code: c.code() })
   }
+}
+
+function openCharacterStatus(code: string): void {
+  openStatusPanel?.(code)
 }
 </script>
 
@@ -126,7 +131,9 @@ function openCharacter(code: string): void {
         :key="c.code()"
         class="creature-row"
         style="cursor: pointer; position: relative; overflow: hidden"
+        title="单击打开详情，右键打开状态管理"
         @click="openCharacter(c.code())"
+        @contextmenu.prevent.stop="openCharacterStatus(c.code())"
       >
         <!-- HP 背景条 -->
         <div

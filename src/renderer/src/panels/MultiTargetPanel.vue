@@ -594,8 +594,12 @@ watch(
 
 function ensureTargetData(): void {
   const chosen = surviveMemory.value.chosen
-  for (const code of chosen) {
-    const creature = Creatures.value.find((c) => c.code() == code)
+  const creaturesByCode = new Map(Creatures.value.map((creature) => [creature.code(), creature]))
+  const defenderCodes = new Set(
+    Array.from(chosen).filter((code) => code != 'DM' && creaturesByCode.has(code))
+  )
+  for (const code of defenderCodes) {
+    const creature = creaturesByCode.get(code)
     const autoCrit = atkType.value == 1 && (creature?.grandStatus().autoCrit ?? false)
     const existing = targets.value.find((t) => t.code == code)
     if (existing) {
@@ -621,7 +625,7 @@ function ensureTargetData(): void {
     }
   }
   // remove deselected
-  targets.value = targets.value.filter((t) => chosen.has(t.code))
+  targets.value = targets.value.filter((target) => defenderCodes.has(target.code))
 }
 
 watch(() => Array.from(surviveMemory.value.chosen).sort().join('\u0000'), ensureTargetData, {
